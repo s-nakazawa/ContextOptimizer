@@ -884,7 +884,16 @@ async function handleParseAST(request) {
       };
     }
     
-    const ast = Parser.parse(content, {
+    // shebangを除去してからパース
+    let parseContent = content;
+    if (content.startsWith('#!')) {
+      const firstNewline = content.indexOf('\n');
+      if (firstNewline !== -1) {
+        parseContent = content.substring(firstNewline + 1);
+      }
+    }
+    
+    const ast = Parser.parse(parseContent, {
       ecmaVersion: 2022,
       sourceType: 'module',
       locations: includeLocations,
@@ -955,6 +964,28 @@ async function handleAnalyzeGitDiff(request) {
     const format = request.params.arguments.format || 'unified';
     
     const git = simpleGit();
+    
+    // Gitリポジトリかどうかをチェック
+    try {
+      await git.checkIsRepo();
+    } catch (error) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        result: {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              error: 'Not a Git repository',
+              message: 'Current directory is not a Git repository',
+              suggestion: 'Please run this command from within a Git repository',
+              timestamp: new Date().toISOString()
+            }, null, 2)
+          }]
+        }
+      };
+    }
+    
     const log = await git.log({ maxCount: maxCommits });
     
     const diffSummary = {
@@ -1573,19 +1604,20 @@ async function handleGetContextAnalytics(request) {
       timestamp: now.toISOString()
     };
     
+    // 基本メトリクスの計算（スコープ外でも使用するため先に計算）
+    const totalContextOperations = filteredContextSizes.length;
+    const totalCompressionOperations = filteredCompressionRatios.length;
+    const totalOptimizationSuggestions = filteredOptimizationSuggestions.length;
+    
+    const avgContextSize = filteredContextSizes.length > 0 ? 
+      filteredContextSizes.reduce((sum, item) => sum + item.size, 0) / filteredContextSizes.length : 0;
+    
+    const avgCompressionRatio = filteredCompressionRatios.length > 0 ? 
+      filteredCompressionRatios.reduce((sum, item) => sum + item.ratio, 0) / filteredCompressionRatios.length : 0;
+    
+    const totalSavings = filteredCompressionRatios.reduce((sum, item) => sum + item.savings, 0);
+    
     if (includeMetrics) {
-      // 基本メトリクス
-      const totalContextOperations = filteredContextSizes.length;
-      const totalCompressionOperations = filteredCompressionRatios.length;
-      const totalOptimizationSuggestions = filteredOptimizationSuggestions.length;
-      
-      const avgContextSize = filteredContextSizes.length > 0 ? 
-        filteredContextSizes.reduce((sum, item) => sum + item.size, 0) / filteredContextSizes.length : 0;
-      
-      const avgCompressionRatio = filteredCompressionRatios.length > 0 ? 
-        filteredCompressionRatios.reduce((sum, item) => sum + item.ratio, 0) / filteredCompressionRatios.length : 0;
-      
-      const totalSavings = filteredCompressionRatios.reduce((sum, item) => sum + item.savings, 0);
       
       analytics.metrics = {
         contextOperations: {
