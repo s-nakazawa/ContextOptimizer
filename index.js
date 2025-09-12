@@ -118,6 +118,32 @@ let config = {
       compressionEnabled: true,
       searchEnabled: true
     }
+  },
+  analytics: {
+    enabled: true,
+    metrics: {
+      enabled: true,
+      collectionInterval: 5000,
+      retentionDays: 30,
+      trackContextSize: true,
+      trackCompressionRatio: true,
+      trackOptimizationSuggestions: true,
+      trackHistoryUsage: true
+    },
+    dashboard: {
+      enabled: true,
+      updateInterval: 10000,
+      showRealTimeStats: true,
+      showHistoricalTrends: true,
+      showEfficiencyMetrics: true
+    },
+    insights: {
+      enabled: true,
+      analyzeFrequency: 'on-demand',
+      generateReports: true,
+      suggestImprovements: true,
+      trackPerformance: true
+    }
   }
 };
 
@@ -143,6 +169,48 @@ if (config.performance && config.performance.cache && config.performance.cache.e
     maxKeys: config.performance.cache.maxKeys,
     checkperiod: 60
   });
+}
+
+// 分析機能の初期化
+let analyticsData = {
+  contextSizes: [],
+  compressionRatios: [],
+  optimizationSuggestions: [],
+  historyUsage: [],
+  performanceMetrics: [],
+  startTime: new Date().toISOString()
+};
+
+// メトリクス収集の開始
+if (config.analytics && config.analytics.enabled && config.analytics.metrics && config.analytics.metrics.enabled) {
+  setInterval(() => {
+    const currentTime = new Date().toISOString();
+    const memoryUsage = process.memoryUsage();
+    
+    analyticsData.performanceMetrics.push({
+      timestamp: currentTime,
+      memoryUsage: memoryUsage.heapUsed,
+      memoryTotal: memoryUsage.heapTotal,
+      cpuUsage: process.cpuUsage()
+    });
+    
+    // 古いデータの削除（30日分保持）
+    const retentionDays = config.analytics.metrics.retentionDays || 30;
+    const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    
+    analyticsData.contextSizes = analyticsData.contextSizes.filter(item => 
+      new Date(item.timestamp) > cutoffDate
+    );
+    analyticsData.compressionRatios = analyticsData.compressionRatios.filter(item => 
+      new Date(item.timestamp) > cutoffDate
+    );
+    analyticsData.optimizationSuggestions = analyticsData.optimizationSuggestions.filter(item => 
+      new Date(item.timestamp) > cutoffDate
+    );
+    analyticsData.performanceMetrics = analyticsData.performanceMetrics.filter(item => 
+      new Date(item.timestamp) > cutoffDate
+    );
+  }, config.analytics.metrics.collectionInterval || 5000);
 }
 
 // 最初のログ - ファイルが実行されているかどうかを確認
@@ -396,6 +464,46 @@ async function main() {
                       },
                       required: ['action']
                     }
+                  },
+                  {
+                    name: 'get_context_analytics',
+                    description: 'コンテキスト運用の効率性を分析・可視化します',
+                    inputSchema: {
+                      type: 'object',
+                      properties: {
+                        timeRange: { type: 'string', description: '分析期間（1h, 24h, 7d, 30d）', default: '24h' },
+                        includeMetrics: { type: 'boolean', description: '詳細メトリクスを含めるかどうか', default: true },
+                        includeTrends: { type: 'boolean', description: 'トレンド分析を含めるかどうか', default: true },
+                        includeInsights: { type: 'boolean', description: '洞察と推奨事項を含めるかどうか', default: true }
+                      },
+                      required: []
+                    }
+                  },
+                  {
+                    name: 'get_efficiency_dashboard',
+                    description: 'リアルタイムの効率性ダッシュボードを表示します',
+                    inputSchema: {
+                      type: 'object',
+                      properties: {
+                        refreshInterval: { type: 'number', description: '更新間隔（秒）', default: 10 },
+                        showRealTime: { type: 'boolean', description: 'リアルタイム統計を表示するかどうか', default: true },
+                        showHistorical: { type: 'boolean', description: '履歴統計を表示するかどうか', default: true }
+                      },
+                      required: []
+                    }
+                  },
+                  {
+                    name: 'generate_performance_report',
+                    description: 'パフォーマンスレポートを生成します',
+                    inputSchema: {
+                      type: 'object',
+                      properties: {
+                        reportType: { type: 'string', description: 'レポートタイプ（summary, detailed, comparison）', default: 'summary' },
+                        timeRange: { type: 'string', description: 'レポート期間（1h, 24h, 7d, 30d）', default: '24h' },
+                        includeRecommendations: { type: 'boolean', description: '推奨事項を含めるかどうか', default: true }
+                      },
+                      required: []
+                    }
                   }
                 ]
               }
@@ -457,6 +565,15 @@ async function main() {
                 break;
               case 'manage_context_history':
                 response = await handleManageContextHistory(request);
+                break;
+              case 'get_context_analytics':
+                response = await handleGetContextAnalytics(request);
+                break;
+              case 'get_efficiency_dashboard':
+                response = await handleGetEfficiencyDashboard(request);
+                break;
+              case 'generate_performance_report':
+                response = await handleGeneratePerformanceReport(request);
                 break;
               default:
                 response = {
@@ -1009,6 +1126,9 @@ async function handleMonitorContextSize(request) {
     const lineCount = context.split('\n').length;
     const wordCount = context.split(/\s+/).filter(word => word.length > 0).length;
     
+    // メトリクス収集
+    recordContextSize(contextSize);
+    
     const monitoring = config.contextManagement?.monitoring || {};
     const maxSize = monitoring.maxContextSize || 100000;
     const warningThreshold = monitoring.warningThreshold || 80000;
@@ -1113,6 +1233,9 @@ async function handleAutoCompressContext(request) {
     
     const compressedSize = Buffer.byteLength(compressedContext, 'utf8');
     const actualCompressionRatio = compressedSize / originalSize;
+    
+    // メトリクス収集
+    recordCompressionRatio(originalSize, compressedSize);
     
     return {
       jsonrpc: '2.0',
@@ -1227,6 +1350,9 @@ async function handleSuggestContextOptimization(request) {
     const totalPotentialSavings = suggestions.reduce((sum, suggestion) => 
       sum + (suggestion.potentialSavings || 0), 0
     );
+    
+    // メトリクス収集
+    recordOptimizationSuggestions(suggestions);
     
     return {
       jsonrpc: '2.0',
@@ -1390,6 +1516,521 @@ async function handleManageContextHistory(request) {
         message: `Internal error: ${error.message}`
       }
     };
+  }
+}
+
+// 新しい分析機能ハンドラー関数
+async function handleGetContextAnalytics(request) {
+  console.error(chalk.blue('🔍 get_context_analytics 実行中 / Executing get_context_analytics'));
+  
+  try {
+    const timeRange = request.params.arguments.timeRange || '24h';
+    const includeMetrics = request.params.arguments.includeMetrics !== false;
+    const includeTrends = request.params.arguments.includeTrends !== false;
+    const includeInsights = request.params.arguments.includeInsights !== false;
+    
+    // 時間範囲の計算
+    const now = new Date();
+    let startTime;
+    switch (timeRange) {
+      case '1h':
+        startTime = new Date(now.getTime() - 60 * 60 * 1000);
+        break;
+      case '24h':
+        startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        break;
+      case '7d':
+        startTime = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case '30d':
+        startTime = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    }
+    
+    // 期間内のデータをフィルタリング
+    const filteredContextSizes = analyticsData.contextSizes.filter(item => 
+      new Date(item.timestamp) >= startTime
+    );
+    const filteredCompressionRatios = analyticsData.compressionRatios.filter(item => 
+      new Date(item.timestamp) >= startTime
+    );
+    const filteredOptimizationSuggestions = analyticsData.optimizationSuggestions.filter(item => 
+      new Date(item.timestamp) >= startTime
+    );
+    const filteredPerformanceMetrics = analyticsData.performanceMetrics.filter(item => 
+      new Date(item.timestamp) >= startTime
+    );
+    
+    const analytics = {
+      timeRange: timeRange,
+      period: {
+        start: startTime.toISOString(),
+        end: now.toISOString(),
+        duration: now.getTime() - startTime.getTime()
+      },
+      timestamp: now.toISOString()
+    };
+    
+    if (includeMetrics) {
+      // 基本メトリクス
+      const totalContextOperations = filteredContextSizes.length;
+      const totalCompressionOperations = filteredCompressionRatios.length;
+      const totalOptimizationSuggestions = filteredOptimizationSuggestions.length;
+      
+      const avgContextSize = filteredContextSizes.length > 0 ? 
+        filteredContextSizes.reduce((sum, item) => sum + item.size, 0) / filteredContextSizes.length : 0;
+      
+      const avgCompressionRatio = filteredCompressionRatios.length > 0 ? 
+        filteredCompressionRatios.reduce((sum, item) => sum + item.ratio, 0) / filteredCompressionRatios.length : 0;
+      
+      const totalSavings = filteredCompressionRatios.reduce((sum, item) => sum + item.savings, 0);
+      
+      analytics.metrics = {
+        contextOperations: {
+          total: totalContextOperations,
+          averageSize: Math.round(avgContextSize),
+          maxSize: filteredContextSizes.length > 0 ? Math.max(...filteredContextSizes.map(item => item.size)) : 0,
+          minSize: filteredContextSizes.length > 0 ? Math.min(...filteredContextSizes.map(item => item.size)) : 0
+        },
+        compressionOperations: {
+          total: totalCompressionOperations,
+          averageRatio: Math.round(avgCompressionRatio * 100) / 100,
+          totalSavings: totalSavings,
+          efficiency: totalSavings > 0 ? Math.round((totalSavings / (avgContextSize * totalContextOperations)) * 100) : 0
+        },
+        optimizationSuggestions: {
+          total: totalOptimizationSuggestions,
+          averageSuggestionsPerRequest: totalOptimizationSuggestions > 0 ? 
+            filteredOptimizationSuggestions.reduce((sum, item) => sum + item.count, 0) / totalOptimizationSuggestions : 0
+        },
+        performance: {
+          averageMemoryUsage: filteredPerformanceMetrics.length > 0 ? 
+            Math.round(filteredPerformanceMetrics.reduce((sum, item) => sum + item.memoryUsage, 0) / filteredPerformanceMetrics.length) : 0,
+          peakMemoryUsage: filteredPerformanceMetrics.length > 0 ? 
+            Math.max(...filteredPerformanceMetrics.map(item => item.memoryUsage)) : 0
+        }
+      };
+    }
+    
+    if (includeTrends) {
+      // トレンド分析
+      const hourlyData = {};
+      const dailyData = {};
+      
+      filteredContextSizes.forEach(item => {
+        const hour = new Date(item.timestamp).getHours();
+        const day = new Date(item.timestamp).toDateString();
+        
+        if (!hourlyData[hour]) hourlyData[hour] = [];
+        if (!dailyData[day]) dailyData[day] = [];
+        
+        hourlyData[hour].push(item.size);
+        dailyData[day].push(item.size);
+      });
+      
+      analytics.trends = {
+        hourly: Object.keys(hourlyData).map(hour => ({
+          hour: parseInt(hour),
+          averageSize: Math.round(hourlyData[hour].reduce((sum, size) => sum + size, 0) / hourlyData[hour].length),
+          count: hourlyData[hour].length
+        })).sort((a, b) => a.hour - b.hour),
+        daily: Object.keys(dailyData).map(day => ({
+          date: day,
+          averageSize: Math.round(dailyData[day].reduce((sum, size) => sum + size, 0) / dailyData[day].length),
+          count: dailyData[day].length
+        }))
+      };
+    }
+    
+    if (includeInsights) {
+      // 洞察と推奨事項
+      const insights = [];
+      
+      if (avgContextSize > 80000) {
+        insights.push({
+          type: 'warning',
+          message: '平均コンテキストサイズが大きすぎます',
+          recommendation: 'より積極的な圧縮を検討してください',
+          priority: 'high'
+        });
+      }
+      
+      if (avgCompressionRatio < 0.5) {
+        insights.push({
+          type: 'suggestion',
+          message: '圧縮率が低いです',
+          recommendation: 'より効率的な圧縮アルゴリズムを試してください',
+          priority: 'medium'
+        });
+      }
+      
+      if (totalOptimizationSuggestions > 0) {
+        const avgSuggestions = filteredOptimizationSuggestions.reduce((sum, item) => sum + item.count, 0) / totalOptimizationSuggestions;
+        if (avgSuggestions > 5) {
+          insights.push({
+            type: 'info',
+            message: '多くの最適化提案が生成されています',
+            recommendation: 'コンテキストの品質を向上させることを検討してください',
+            priority: 'low'
+          });
+        }
+      }
+      
+      analytics.insights = insights;
+    }
+    
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(analytics, null, 2)
+        }]
+      }
+    };
+  } catch (error) {
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      error: {
+        code: -32603,
+        message: `Internal error: ${error.message}`
+      }
+    };
+  }
+}
+
+async function handleGetEfficiencyDashboard(request) {
+  console.error(chalk.blue('🔍 get_efficiency_dashboard 実行中 / Executing get_efficiency_dashboard'));
+  
+  try {
+    const refreshInterval = request.params.arguments.refreshInterval || 10;
+    const showRealTime = request.params.arguments.showRealTime !== false;
+    const showHistorical = request.params.arguments.showHistorical !== false;
+    
+    const now = new Date();
+    const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    
+    const recentContextSizes = analyticsData.contextSizes.filter(item => 
+      new Date(item.timestamp) >= last24h
+    );
+    const recentCompressionRatios = analyticsData.compressionRatios.filter(item => 
+      new Date(item.timestamp) >= last24h
+    );
+    const recentPerformanceMetrics = analyticsData.performanceMetrics.filter(item => 
+      new Date(item.timestamp) >= last24h
+    );
+    
+    const dashboard = {
+      timestamp: now.toISOString(),
+      refreshInterval: refreshInterval,
+      uptime: now.getTime() - new Date(analyticsData.startTime).getTime(),
+      status: 'running'
+    };
+    
+    if (showRealTime) {
+      const currentMemoryUsage = process.memoryUsage();
+      const currentCpuUsage = process.cpuUsage();
+      
+      dashboard.realTime = {
+        memory: {
+          used: currentMemoryUsage.heapUsed,
+          total: currentMemoryUsage.heapTotal,
+          percentage: Math.round((currentMemoryUsage.heapUsed / currentMemoryUsage.heapTotal) * 100)
+        },
+        cpu: {
+          user: currentCpuUsage.user,
+          system: currentCpuUsage.system
+        },
+        contextHistory: {
+          totalEntries: global.contextHistory ? global.contextHistory.size : 0,
+          cacheSize: performanceCache ? performanceCache.keys().length : 0
+        }
+      };
+    }
+    
+    if (showHistorical) {
+      const totalOperations = recentContextSizes.length;
+      const totalCompressions = recentCompressionRatios.length;
+      const avgContextSize = totalOperations > 0 ? 
+        recentContextSizes.reduce((sum, item) => sum + item.size, 0) / totalOperations : 0;
+      const avgCompressionRatio = totalCompressions > 0 ? 
+        recentCompressionRatios.reduce((sum, item) => sum + item.ratio, 0) / totalCompressions : 0;
+      const totalSavings = recentCompressionRatios.reduce((sum, item) => sum + item.savings, 0);
+      
+      dashboard.historical = {
+        period: '24h',
+        operations: {
+          contextOperations: totalOperations,
+          compressionOperations: totalCompressions,
+          optimizationSuggestions: analyticsData.optimizationSuggestions.filter(item => 
+            new Date(item.timestamp) >= last24h
+          ).length
+        },
+        efficiency: {
+          averageContextSize: Math.round(avgContextSize),
+          averageCompressionRatio: Math.round(avgCompressionRatio * 100) / 100,
+          totalSavings: totalSavings,
+          efficiencyScore: totalOperations > 0 ? Math.round((totalSavings / (avgContextSize * totalOperations)) * 100) : 0
+        },
+        performance: {
+          averageMemoryUsage: recentPerformanceMetrics.length > 0 ? 
+            Math.round(recentPerformanceMetrics.reduce((sum, item) => sum + item.memoryUsage, 0) / recentPerformanceMetrics.length) : 0,
+          peakMemoryUsage: recentPerformanceMetrics.length > 0 ? 
+            Math.max(...recentPerformanceMetrics.map(item => item.memoryUsage)) : 0
+        }
+      };
+    }
+    
+    // 効率性スコアの計算
+    const efficiencyScore = calculateEfficiencyScore(dashboard);
+    dashboard.efficiencyScore = efficiencyScore;
+    
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(dashboard, null, 2)
+        }]
+      }
+    };
+  } catch (error) {
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      error: {
+        code: -32603,
+        message: `Internal error: ${error.message}`
+      }
+    };
+  }
+}
+
+async function handleGeneratePerformanceReport(request) {
+  console.error(chalk.blue('🔍 generate_performance_report 実行中 / Executing generate_performance_report'));
+  
+  try {
+    const reportType = request.params.arguments.reportType || 'summary';
+    const timeRange = request.params.arguments.timeRange || '24h';
+    const includeRecommendations = request.params.arguments.includeRecommendations !== false;
+    
+    const now = new Date();
+    let startTime;
+    switch (timeRange) {
+      case '1h':
+        startTime = new Date(now.getTime() - 60 * 60 * 1000);
+        break;
+      case '24h':
+        startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        break;
+      case '7d':
+        startTime = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case '30d':
+        startTime = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    }
+    
+    const filteredData = {
+      contextSizes: analyticsData.contextSizes.filter(item => new Date(item.timestamp) >= startTime),
+      compressionRatios: analyticsData.compressionRatios.filter(item => new Date(item.timestamp) >= startTime),
+      optimizationSuggestions: analyticsData.optimizationSuggestions.filter(item => new Date(item.timestamp) >= startTime),
+      performanceMetrics: analyticsData.performanceMetrics.filter(item => new Date(item.timestamp) >= startTime)
+    };
+    
+    const report = {
+      type: reportType,
+      timeRange: timeRange,
+      generatedAt: now.toISOString(),
+      period: {
+        start: startTime.toISOString(),
+        end: now.toISOString()
+      }
+    };
+    
+    if (reportType === 'summary' || reportType === 'detailed') {
+      const totalOperations = filteredData.contextSizes.length;
+      const totalCompressions = filteredData.compressionRatios.length;
+      const totalOptimizations = filteredData.optimizationSuggestions.length;
+      
+      const avgContextSize = totalOperations > 0 ? 
+        filteredData.contextSizes.reduce((sum, item) => sum + item.size, 0) / totalOperations : 0;
+      
+      const avgCompressionRatio = totalCompressions > 0 ? 
+        filteredData.compressionRatios.reduce((sum, item) => sum + item.ratio, 0) / totalCompressions : 0;
+      
+      const totalSavings = filteredData.compressionRatios.reduce((sum, item) => sum + item.savings, 0);
+      
+      report.summary = {
+        operations: {
+          contextOperations: totalOperations,
+          compressionOperations: totalCompressions,
+          optimizationSuggestions: totalOptimizations
+        },
+        efficiency: {
+          averageContextSize: Math.round(avgContextSize),
+          averageCompressionRatio: Math.round(avgCompressionRatio * 100) / 100,
+          totalSavings: totalSavings,
+          efficiencyScore: totalOperations > 0 ? Math.round((totalSavings / (avgContextSize * totalOperations)) * 100) : 0
+        },
+        performance: {
+          averageMemoryUsage: filteredData.performanceMetrics.length > 0 ? 
+            Math.round(filteredData.performanceMetrics.reduce((sum, item) => sum + item.memoryUsage, 0) / filteredData.performanceMetrics.length) : 0,
+          peakMemoryUsage: filteredData.performanceMetrics.length > 0 ? 
+            Math.max(...filteredData.performanceMetrics.map(item => item.memoryUsage)) : 0
+        }
+      };
+    }
+    
+    if (reportType === 'detailed' || reportType === 'comparison') {
+      report.detailed = {
+        contextSizeDistribution: calculateDistribution(filteredData.contextSizes.map(item => item.size)),
+        compressionRatioDistribution: calculateDistribution(filteredData.compressionRatios.map(item => item.ratio)),
+        performanceTrends: filteredData.performanceMetrics.map(item => ({
+          timestamp: item.timestamp,
+          memoryUsage: item.memoryUsage,
+          memoryTotal: item.memoryTotal
+        }))
+      };
+    }
+    
+    if (includeRecommendations) {
+      report.recommendations = generateRecommendations(report.summary || {});
+    }
+    
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(report, null, 2)
+        }]
+      }
+    };
+  } catch (error) {
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      error: {
+        code: -32603,
+        message: `Internal error: ${error.message}`
+      }
+    };
+  }
+}
+
+// ヘルパー関数
+function calculateEfficiencyScore(dashboard) {
+  let score = 0;
+  
+  if (dashboard.historical) {
+    const efficiency = dashboard.historical.efficiency;
+    if (efficiency.efficiencyScore > 0) {
+      score += Math.min(efficiency.efficiencyScore, 50);
+    }
+    
+    if (efficiency.averageCompressionRatio > 0.5) {
+      score += 25;
+    }
+    
+    if (dashboard.historical.operations.contextOperations > 0) {
+      score += 25;
+    }
+  }
+  
+  return Math.min(score, 100);
+}
+
+function calculateDistribution(values) {
+  if (values.length === 0) return { min: 0, max: 0, avg: 0, median: 0 };
+  
+  const sorted = values.sort((a, b) => a - b);
+  const min = sorted[0];
+  const max = sorted[sorted.length - 1];
+  const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+  const median = sorted[Math.floor(sorted.length / 2)];
+  
+  return { min, max, avg: Math.round(avg), median };
+}
+
+function generateRecommendations(summary) {
+  const recommendations = [];
+  
+  if (summary.efficiency) {
+    if (summary.efficiency.averageContextSize > 80000) {
+      recommendations.push({
+        type: 'optimization',
+        priority: 'high',
+        title: 'コンテキストサイズの最適化',
+        description: '平均コンテキストサイズが大きすぎます。より積極的な圧縮を検討してください。',
+        action: 'auto_compress_context の使用頻度を増やす'
+      });
+    }
+    
+    if (summary.efficiency.averageCompressionRatio < 0.5) {
+      recommendations.push({
+        type: 'algorithm',
+        priority: 'medium',
+        title: '圧縮アルゴリズムの改善',
+        description: '圧縮率が低いです。より効率的なアルゴリズムを試してください。',
+        action: 'keyword-extraction や summarization アルゴリズムを試す'
+      });
+    }
+    
+    if (summary.efficiency.efficiencyScore < 30) {
+      recommendations.push({
+        type: 'workflow',
+        priority: 'high',
+        title: 'ワークフローの改善',
+        description: '全体的な効率性が低いです。コンテキスト管理のワークフローを見直してください。',
+        action: 'suggest_context_optimization を定期的に実行する'
+      });
+    }
+  }
+  
+  return recommendations;
+}
+
+// メトリクス収集のための関数
+function recordContextSize(size) {
+  if (config.analytics && config.analytics.enabled && config.analytics.metrics && config.analytics.metrics.trackContextSize) {
+    analyticsData.contextSizes.push({
+      size: size,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+function recordCompressionRatio(originalSize, compressedSize) {
+  if (config.analytics && config.analytics.enabled && config.analytics.metrics && config.analytics.metrics.trackCompressionRatio) {
+    const ratio = compressedSize / originalSize;
+    const savings = originalSize - compressedSize;
+    
+    analyticsData.compressionRatios.push({
+      ratio: ratio,
+      savings: savings,
+      originalSize: originalSize,
+      compressedSize: compressedSize,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+function recordOptimizationSuggestions(suggestions) {
+  if (config.analytics && config.analytics.enabled && config.analytics.metrics && config.analytics.metrics.trackOptimizationSuggestions) {
+    analyticsData.optimizationSuggestions.push({
+      count: suggestions.length,
+      suggestions: suggestions,
+      timestamp: new Date().toISOString()
+    });
   }
 }
 

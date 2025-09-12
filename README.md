@@ -40,6 +40,12 @@
 - **Optimization Suggestions**: Intelligent suggestions for context optimization
 - **Context History Management**: Efficient management of past contexts
 
+### 📈 **Analytics & Insights**
+- **Context Analytics**: Comprehensive analysis of context usage efficiency
+- **Efficiency Dashboard**: Real-time dashboard showing performance metrics
+- **Performance Reports**: Detailed reports with recommendations
+- **Usage Metrics**: Automatic collection and analysis of usage patterns
+
 ## Installation
 
 ```bash
@@ -85,6 +91,9 @@ Add to your Cursor MCP configuration:
 12. **auto_compress_context** - Automatically compress context
 13. **suggest_context_optimization** - Get optimization suggestions
 14. **manage_context_history** - Manage context history efficiently
+15. **get_context_analytics** - Analyze context usage efficiency
+16. **get_efficiency_dashboard** - View real-time efficiency dashboard
+17. **generate_performance_report** - Generate detailed performance reports
 
 ## Configuration
 
@@ -138,6 +147,32 @@ The server uses a `config.json` file for configuration:
       "retentionPeriod": 7,
       "compressionEnabled": true,
       "searchEnabled": true
+    }
+  },
+  "analytics": {
+    "enabled": true,
+    "metrics": {
+      "enabled": true,
+      "collectionInterval": 5000,
+      "retentionDays": 30,
+      "trackContextSize": true,
+      "trackCompressionRatio": true,
+      "trackOptimizationSuggestions": true,
+      "trackHistoryUsage": true
+    },
+    "dashboard": {
+      "enabled": true,
+      "updateInterval": 10000,
+      "showRealTimeStats": true,
+      "showHistoricalTrends": true,
+      "showEfficiencyMetrics": true
+    },
+    "insights": {
+      "enabled": true,
+      "analyzeFrequency": "on-demand",
+      "generateReports": true,
+      "suggestImprovements": true,
+      "trackPerformance": true
     }
   }
 }

@@ -97,5 +97,31 @@
       "compressionEnabled": true,
       "searchEnabled": true
     }
+  },
+  "analytics": {
+    "enabled": true,
+    "metrics": {
+      "enabled": true,
+      "collectionInterval": 5000,
+      "retentionDays": 30,
+      "trackContextSize": true,
+      "trackCompressionRatio": true,
+      "trackOptimizationSuggestions": true,
+      "trackHistoryUsage": true
+    },
+    "dashboard": {
+      "enabled": true,
+      "updateInterval": 10000,
+      "showRealTimeStats": true,
+      "showHistoricalTrends": true,
+      "showEfficiencyMetrics": true
+    },
+    "insights": {
+      "enabled": true,
+      "analyzeFrequency": "on-demand",
+      "generateReports": true,
+      "suggestImprovements": true,
+      "trackPerformance": true
+    }
   }
 }
