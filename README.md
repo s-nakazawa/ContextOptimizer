@@ -34,6 +34,12 @@
 - Natural language processing
 - Configurable weights and thresholds
 
+### 📊 **Context Management**
+- **Real-time Context Monitoring**: Monitor context usage in real-time
+- **Auto Compression**: Automatically compress context when it exceeds limits
+- **Optimization Suggestions**: Intelligent suggestions for context optimization
+- **Context History Management**: Efficient management of past contexts
+
 ## Installation
 
 ```bash
@@ -75,6 +81,10 @@ Add to your Cursor MCP configuration:
 8. **analyze_git_diff** - Analyze Git differences
 9. **optimize_performance** - Optimize project performance
 10. **hybrid_search** - Execute hybrid search queries
+11. **monitor_context_size** - Monitor context usage in real-time
+12. **auto_compress_context** - Automatically compress context
+13. **suggest_context_optimization** - Get optimization suggestions
+14. **manage_context_history** - Manage context history efficiently
 
 ## Configuration
 
@@ -98,6 +108,36 @@ The server uses a `config.json` file for configuration:
       "enabled": true,
       "ttl": 300,
       "maxKeys": 1000
+    }
+  },
+  "contextManagement": {
+    "enabled": true,
+    "monitoring": {
+      "enabled": true,
+      "maxContextSize": 100000,
+      "warningThreshold": 80000,
+      "criticalThreshold": 95000,
+      "updateInterval": 1000
+    },
+    "autoCompression": {
+      "enabled": true,
+      "threshold": 90000,
+      "compressionRatio": 0.7,
+      "preserveImportant": true,
+      "algorithms": ["summarization", "truncation", "keyword-extraction"]
+    },
+    "optimizationSuggestions": {
+      "enabled": true,
+      "analyzeFrequency": "on-demand",
+      "suggestionTypes": ["duplicate-removal", "irrelevant-filtering", "priority-ranking"],
+      "confidenceThreshold": 0.8
+    },
+    "historyManagement": {
+      "enabled": true,
+      "maxHistoryEntries": 50,
+      "retentionPeriod": 7,
+      "compressionEnabled": true,
+      "searchEnabled": true
     }
   }
 }

@@ -67,5 +67,35 @@
       "bm25": 0.6,
       "vector": 0.4
     }
+  },
+  "contextManagement": {
+    "enabled": true,
+    "monitoring": {
+      "enabled": true,
+      "maxContextSize": 100000,
+      "warningThreshold": 80000,
+      "criticalThreshold": 95000,
+      "updateInterval": 1000
+    },
+    "autoCompression": {
+      "enabled": true,
+      "threshold": 90000,
+      "compressionRatio": 0.7,
+      "preserveImportant": true,
+      "algorithms": ["summarization", "truncation", "keyword-extraction"]
+    },
+    "optimizationSuggestions": {
+      "enabled": true,
+      "analyzeFrequency": "on-demand",
+      "suggestionTypes": ["duplicate-removal", "irrelevant-filtering", "priority-ranking"],
+      "confidenceThreshold": 0.8
+    },
+    "historyManagement": {
+      "enabled": true,
+      "maxHistoryEntries": 50,
+      "retentionPeriod": 7,
+      "compressionEnabled": true,
+      "searchEnabled": true
+    }
   }
 }

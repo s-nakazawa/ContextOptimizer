@@ -88,6 +88,36 @@ let config = {
       bm25: 0.6,
       vector: 0.4
     }
+  },
+  contextManagement: {
+    enabled: true,
+    monitoring: {
+      enabled: true,
+      maxContextSize: 100000,
+      warningThreshold: 80000,
+      criticalThreshold: 95000,
+      updateInterval: 1000
+    },
+    autoCompression: {
+      enabled: true,
+      threshold: 90000,
+      compressionRatio: 0.7,
+      preserveImportant: true,
+      algorithms: ['summarization', 'truncation', 'keyword-extraction']
+    },
+    optimizationSuggestions: {
+      enabled: true,
+      analyzeFrequency: 'on-demand',
+      suggestionTypes: ['duplicate-removal', 'irrelevant-filtering', 'priority-ranking'],
+      confidenceThreshold: 0.8
+    },
+    historyManagement: {
+      enabled: true,
+      maxHistoryEntries: 50,
+      retentionPeriod: 7,
+      compressionEnabled: true,
+      searchEnabled: true
+    }
   }
 };
 
@@ -314,6 +344,58 @@ async function main() {
                       },
                       required: ['query']
                     }
+                  },
+                  {
+                    name: 'monitor_context_size',
+                    description: 'リアルタイムでコンテキスト使用量を監視します',
+                    inputSchema: {
+                      type: 'object',
+                      properties: {
+                        context: { type: 'string', description: '監視対象のコンテキスト' },
+                        includeDetails: { type: 'boolean', description: '詳細情報を含めるかどうか（デフォルト: true）', default: true }
+                      },
+                      required: ['context']
+                    }
+                  },
+                  {
+                    name: 'auto_compress_context',
+                    description: 'コンテキストが一定量を超えたら自動で圧縮します',
+                    inputSchema: {
+                      type: 'object',
+                      properties: {
+                        context: { type: 'string', description: '圧縮対象のコンテキスト' },
+                        algorithm: { type: 'string', description: '圧縮アルゴリズム（summarization, truncation, keyword-extraction）', default: 'summarization' },
+                        compressionRatio: { type: 'number', description: '圧縮率（0.1-0.9）', default: 0.7 }
+                      },
+                      required: ['context']
+                    }
+                  },
+                  {
+                    name: 'suggest_context_optimization',
+                    description: 'どの部分を削除すべきかの最適化提案をします',
+                    inputSchema: {
+                      type: 'object',
+                      properties: {
+                        context: { type: 'string', description: '最適化対象のコンテキスト' },
+                        query: { type: 'string', description: '関連するクエリ（オプション）' },
+                        suggestionTypes: { type: 'array', description: '提案タイプ（duplicate-removal, irrelevant-filtering, priority-ranking）', default: ['duplicate-removal', 'irrelevant-filtering'] }
+                      },
+                      required: ['context']
+                    }
+                  },
+                  {
+                    name: 'manage_context_history',
+                    description: '過去のコンテキストの効率的な管理を行います',
+                    inputSchema: {
+                      type: 'object',
+                      properties: {
+                        action: { type: 'string', description: '実行するアクション（save, retrieve, search, cleanup）' },
+                        contextId: { type: 'string', description: 'コンテキストID（retrieve, search時）' },
+                        context: { type: 'string', description: '保存するコンテキスト（save時）' },
+                        query: { type: 'string', description: '検索クエリ（search時）' }
+                      },
+                      required: ['action']
+                    }
                   }
                 ]
               }
@@ -363,6 +445,18 @@ async function main() {
                 break;
               case 'hybrid_search':
                 response = await handleHybridSearch(request);
+                break;
+              case 'monitor_context_size':
+                response = await handleMonitorContextSize(request);
+                break;
+              case 'auto_compress_context':
+                response = await handleAutoCompressContext(request);
+                break;
+              case 'suggest_context_optimization':
+                response = await handleSuggestContextOptimization(request);
+                break;
+              case 'manage_context_history':
+                response = await handleManageContextHistory(request);
                 break;
               default:
                 response = {
@@ -887,6 +981,403 @@ async function handleHybridSearch(request) {
             vectorEnabled: config.hybridSearch.vector.enabled,
             timestamp: new Date().toISOString()
           }, null, 2)
+        }]
+      }
+    };
+  } catch (error) {
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      error: {
+        code: -32603,
+        message: `Internal error: ${error.message}`
+      }
+    };
+  }
+}
+
+// 新しいコンテキスト管理ハンドラー関数
+async function handleMonitorContextSize(request) {
+  console.error(chalk.blue('🔍 monitor_context_size 実行中 / Executing monitor_context_size'));
+  
+  try {
+    const context = request.params.arguments.context;
+    const includeDetails = request.params.arguments.includeDetails !== false;
+    
+    const contextSize = Buffer.byteLength(context, 'utf8');
+    const contextLength = context.length;
+    const lineCount = context.split('\n').length;
+    const wordCount = context.split(/\s+/).filter(word => word.length > 0).length;
+    
+    const monitoring = config.contextManagement?.monitoring || {};
+    const maxSize = monitoring.maxContextSize || 100000;
+    const warningThreshold = monitoring.warningThreshold || 80000;
+    const criticalThreshold = monitoring.criticalThreshold || 95000;
+    
+    let status = 'normal';
+    if (contextSize >= criticalThreshold) {
+      status = 'critical';
+    } else if (contextSize >= warningThreshold) {
+      status = 'warning';
+    }
+    
+    const result = {
+      contextSize: contextSize,
+      contextLength: contextLength,
+      lineCount: lineCount,
+      wordCount: wordCount,
+      status: status,
+      thresholds: {
+        max: maxSize,
+        warning: warningThreshold,
+        critical: criticalThreshold
+      },
+      usagePercentage: Math.round((contextSize / maxSize) * 100),
+      timestamp: new Date().toISOString()
+    };
+    
+    if (includeDetails) {
+      result.details = {
+        averageLineLength: Math.round(contextLength / lineCount),
+        averageWordLength: Math.round(contextLength / wordCount),
+        compressionPotential: contextSize > warningThreshold ? Math.round((contextSize - warningThreshold) / contextSize * 100) : 0
+      };
+    }
+    
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(result, null, 2)
+        }]
+      }
+    };
+  } catch (error) {
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      error: {
+        code: -32603,
+        message: `Internal error: ${error.message}`
+      }
+    };
+  }
+}
+
+async function handleAutoCompressContext(request) {
+  console.error(chalk.blue('🔍 auto_compress_context 実行中 / Executing auto_compress_context'));
+  
+  try {
+    const context = request.params.arguments.context;
+    const algorithm = request.params.arguments.algorithm || 'summarization';
+    const compressionRatio = request.params.arguments.compressionRatio || 0.7;
+    
+    const originalSize = Buffer.byteLength(context, 'utf8');
+    let compressedContext = '';
+    let compressionMethod = '';
+    
+    switch (algorithm) {
+      case 'summarization':
+        // 簡易的な要約アルゴリズム
+        const lines = context.split('\n');
+        const importantLines = lines.filter(line => 
+          line.trim().length > 0 && 
+          (line.includes('function') || line.includes('class') || line.includes('import') || line.includes('export'))
+        );
+        compressedContext = importantLines.join('\n');
+        compressionMethod = '重要行の抽出';
+        break;
+        
+      case 'truncation':
+        const targetLength = Math.floor(context.length * compressionRatio);
+        compressedContext = context.substring(0, targetLength) + '...';
+        compressionMethod = '末尾切り詰め';
+        break;
+        
+      case 'keyword-extraction':
+        const words = context.split(/\s+/);
+        const keywords = words.filter(word => 
+          word.length > 3 && 
+          !['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'its', 'may', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy', 'did', 'man', 'men', 'put', 'say', 'she', 'too', 'use'].includes(word.toLowerCase())
+        );
+        compressedContext = keywords.slice(0, Math.floor(keywords.length * compressionRatio)).join(' ');
+        compressionMethod = 'キーワード抽出';
+        break;
+        
+      default:
+        compressedContext = context;
+        compressionMethod = '圧縮なし';
+    }
+    
+    const compressedSize = Buffer.byteLength(compressedContext, 'utf8');
+    const actualCompressionRatio = compressedSize / originalSize;
+    
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            originalSize: originalSize,
+            compressedSize: compressedSize,
+            compressionRatio: actualCompressionRatio,
+            compressionMethod: compressionMethod,
+            algorithm: algorithm,
+            compressedContext: compressedContext,
+            timestamp: new Date().toISOString()
+          }, null, 2)
+        }]
+      }
+    };
+  } catch (error) {
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      error: {
+        code: -32603,
+        message: `Internal error: ${error.message}`
+      }
+    };
+  }
+}
+
+async function handleSuggestContextOptimization(request) {
+  console.error(chalk.blue('🔍 suggest_context_optimization 実行中 / Executing suggest_context_optimization'));
+  
+  try {
+    const context = request.params.arguments.context;
+    const query = request.params.arguments.query || '';
+    const suggestionTypes = request.params.arguments.suggestionTypes || ['duplicate-removal', 'irrelevant-filtering'];
+    
+    const suggestions = [];
+    
+    if (suggestionTypes.includes('duplicate-removal')) {
+      const lines = context.split('\n');
+      const duplicates = [];
+      const seen = new Set();
+      
+      lines.forEach((line, index) => {
+        const trimmed = line.trim();
+        if (trimmed.length > 0) {
+          if (seen.has(trimmed)) {
+            duplicates.push({ line: index + 1, content: trimmed });
+          } else {
+            seen.add(trimmed);
+          }
+        }
+      });
+      
+      if (duplicates.length > 0) {
+        suggestions.push({
+          type: 'duplicate-removal',
+          priority: 'high',
+          description: '重複行の削除',
+          count: duplicates.length,
+          examples: duplicates.slice(0, 3),
+          potentialSavings: duplicates.reduce((sum, dup) => sum + Buffer.byteLength(dup.content, 'utf8'), 0)
+        });
+      }
+    }
+    
+    if (suggestionTypes.includes('irrelevant-filtering')) {
+      const lines = context.split('\n');
+      const irrelevantLines = lines.filter((line, index) => {
+        const trimmed = line.trim();
+        return trimmed.length > 0 && 
+               !trimmed.includes('function') && 
+               !trimmed.includes('class') && 
+               !trimmed.includes('import') && 
+               !trimmed.includes('export') &&
+               !trimmed.includes('//') &&
+               !trimmed.includes('*') &&
+               trimmed.length < 20;
+      });
+      
+      if (irrelevantLines.length > 0) {
+        suggestions.push({
+          type: 'irrelevant-filtering',
+          priority: 'medium',
+          description: '関連性の低い行の削除',
+          count: irrelevantLines.length,
+          examples: irrelevantLines.slice(0, 3),
+          potentialSavings: irrelevantLines.reduce((sum, line) => sum + Buffer.byteLength(line, 'utf8'), 0)
+        });
+      }
+    }
+    
+    if (suggestionTypes.includes('priority-ranking')) {
+      const lines = context.split('\n');
+      const importantLines = lines.filter(line => 
+        line.includes('function') || line.includes('class') || line.includes('import') || line.includes('export')
+      );
+      
+      suggestions.push({
+        type: 'priority-ranking',
+        priority: 'low',
+        description: '重要度による優先順位付け',
+        importantLines: importantLines.length,
+        totalLines: lines.length,
+        recommendation: `重要行: ${importantLines.length}/${lines.length} (${Math.round(importantLines.length/lines.length*100)}%)`
+      });
+    }
+    
+    const totalPotentialSavings = suggestions.reduce((sum, suggestion) => 
+      sum + (suggestion.potentialSavings || 0), 0
+    );
+    
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            query: query,
+            suggestions: suggestions,
+            totalSuggestions: suggestions.length,
+            totalPotentialSavings: totalPotentialSavings,
+            contextSize: Buffer.byteLength(context, 'utf8'),
+            optimizationPotential: Math.round((totalPotentialSavings / Buffer.byteLength(context, 'utf8')) * 100),
+            timestamp: new Date().toISOString()
+          }, null, 2)
+        }]
+      }
+    };
+  } catch (error) {
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      error: {
+        code: -32603,
+        message: `Internal error: ${error.message}`
+      }
+    };
+  }
+}
+
+async function handleManageContextHistory(request) {
+  console.error(chalk.blue('🔍 manage_context_history 実行中 / Executing manage_context_history'));
+  
+  try {
+    const action = request.params.arguments.action;
+    const contextId = request.params.arguments.contextId;
+    const context = request.params.arguments.context;
+    const query = request.params.arguments.query;
+    
+    // 簡易的なメモリ内履歴管理（実際の実装では永続化が必要）
+    if (!global.contextHistory) {
+      global.contextHistory = new Map();
+    }
+    
+    let result = {};
+    
+    switch (action) {
+      case 'save':
+        const id = contextId || `context_${Date.now()}`;
+        global.contextHistory.set(id, {
+          context: context,
+          size: Buffer.byteLength(context, 'utf8'),
+          timestamp: new Date().toISOString(),
+          id: id
+        });
+        result = {
+          action: 'save',
+          contextId: id,
+          size: Buffer.byteLength(context, 'utf8'),
+          saved: true
+        };
+        break;
+        
+      case 'retrieve':
+        if (contextId && global.contextHistory.has(contextId)) {
+          const savedContext = global.contextHistory.get(contextId);
+          result = {
+            action: 'retrieve',
+            contextId: contextId,
+            context: savedContext.context,
+            size: savedContext.size,
+            timestamp: savedContext.timestamp,
+            found: true
+          };
+        } else {
+          result = {
+            action: 'retrieve',
+            contextId: contextId,
+            found: false,
+            error: 'Context not found'
+          };
+        }
+        break;
+        
+      case 'search':
+        const searchResults = [];
+        for (const [id, savedContext] of global.contextHistory) {
+          if (savedContext.context.toLowerCase().includes(query.toLowerCase())) {
+            searchResults.push({
+              id: id,
+              size: savedContext.size,
+              timestamp: savedContext.timestamp,
+              preview: savedContext.context.substring(0, 100) + '...'
+            });
+          }
+        }
+        result = {
+          action: 'search',
+          query: query,
+          results: searchResults,
+          count: searchResults.length
+        };
+        break;
+        
+      case 'cleanup':
+        const maxEntries = config.contextManagement?.historyManagement?.maxHistoryEntries || 50;
+        const entries = Array.from(global.contextHistory.entries());
+        
+        if (entries.length > maxEntries) {
+          // 古いエントリを削除
+          entries.sort((a, b) => new Date(a[1].timestamp) - new Date(b[1].timestamp));
+          const toDelete = entries.slice(0, entries.length - maxEntries);
+          
+          toDelete.forEach(([id]) => {
+            global.contextHistory.delete(id);
+          });
+          
+          result = {
+            action: 'cleanup',
+            deletedCount: toDelete.length,
+            remainingCount: global.contextHistory.size,
+            maxEntries: maxEntries
+          };
+        } else {
+          result = {
+            action: 'cleanup',
+            deletedCount: 0,
+            remainingCount: global.contextHistory.size,
+            maxEntries: maxEntries,
+            message: 'No cleanup needed'
+          };
+        }
+        break;
+        
+      default:
+        result = {
+          action: action,
+          error: 'Unknown action'
+        };
+    }
+    
+    result.timestamp = new Date().toISOString();
+    
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(result, null, 2)
         }]
       }
     };
