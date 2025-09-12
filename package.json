@@ -1,0 +1,45 @@
+{
+  "name": "context-optimizer",
+  "version": "1.0.0",
+  "description": "Context Optimizer - Advanced MCP Server for Cursor Development",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "context-optimizer": "index.js"
+  },
+  "files": [
+    "index.js",
+    "config.json",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "glob": "^10.3.10",
+    "acorn": "^8.11.0",
+    "simple-git": "^3.19.1",
+    "node-cache": "^5.1.2",
+    "natural": "^6.7.0"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "cursor",
+    "context-optimization",
+    "typescript",
+    "javascript",
+    "ast",
+    "search",
+    "git",
+    "performance"
+  ],
+  "author": "charu",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/charu/context-optimizer.git"
+  }
+}

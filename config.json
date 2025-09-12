@@ -1,0 +1,71 @@
+{
+  "server": {
+    "name": "context-optimizer-server",
+    "version": "1.0.0",
+    "description": "Context Optimizer - Advanced MCP Server for Cursor Development with File Search, Content Reading, AST Parsing, Git Diff Analysis, Performance Optimization and Hybrid Search"
+  },
+  "tools": {
+    "enabled": true,
+    "maxResults": 10
+  },
+  "logging": {
+    "level": "info",
+    "enabled": true
+  },
+  "fileSearch": {
+    "enabled": true,
+    "patterns": ["**/*.{ts,js,tsx,jsx}", "**/*.py", "**/*.java", "**/*.go", "**/*.rs"],
+    "excludePatterns": ["**/node_modules/**", "**/dist/**", "**/build/**", "**/.git/**"]
+  },
+  "fileContent": {
+    "enabled": true,
+    "maxFileSize": 100000,
+    "supportedExtensions": [".ts", ".js", ".tsx", ".jsx", ".py", ".java", ".go", ".rs", ".md", ".txt"]
+  },
+  "astParsing": {
+    "enabled": true,
+    "supportedLanguages": ["javascript", "typescript"],
+    "maxFileSize": 50000,
+    "includeComments": true,
+    "includeLocations": true
+  },
+  "gitDiff": {
+    "enabled": true,
+    "maxCommits": 10,
+    "includeStats": true,
+    "supportedFormats": ["unified", "context", "name-only"]
+  },
+  "performance": {
+    "enabled": true,
+    "cache": {
+      "enabled": true,
+      "ttl": 300,
+      "maxKeys": 1000
+    },
+    "parallel": {
+      "enabled": true,
+      "maxConcurrency": 5
+    },
+    "memory": {
+      "enabled": true,
+      "maxMemoryUsage": 104857600
+    }
+  },
+  "hybridSearch": {
+    "enabled": true,
+    "bm25": {
+      "enabled": true,
+      "k1": 1.2,
+      "b": 0.75
+    },
+    "vector": {
+      "enabled": true,
+      "dimensions": 384,
+      "similarityThreshold": 0.7
+    },
+    "weights": {
+      "bm25": 0.6,
+      "vector": 0.4
+    }
+  }
+}
