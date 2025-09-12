@@ -181,11 +181,19 @@ let analyticsData = {
   startTime: new Date().toISOString()
 };
 
-// メトリクス収集の開始
+// メトリクス収集の開始（メモリ最適化版）
 if (config.analytics && config.analytics.enabled && config.analytics.metrics && config.analytics.metrics.enabled) {
   setInterval(() => {
     const currentTime = new Date().toISOString();
     const memoryUsage = process.memoryUsage();
+    
+    // メモリ使用量が高い場合はガベージコレクションを強制実行
+    if (memoryUsage.heapUsed / memoryUsage.heapTotal > 0.8) {
+      if (global.gc) {
+        global.gc();
+        console.error(chalk.yellow('🧹 ガベージコレクション実行 / Garbage collection executed'));
+      }
+    }
     
     analyticsData.performanceMetrics.push({
       timestamp: currentTime,
@@ -198,18 +206,33 @@ if (config.analytics && config.analytics.enabled && config.analytics.metrics && 
     const retentionDays = config.analytics.metrics.retentionDays || 30;
     const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
     
-    analyticsData.contextSizes = analyticsData.contextSizes.filter(item => 
-      new Date(item.timestamp) > cutoffDate
-    );
-    analyticsData.compressionRatios = analyticsData.compressionRatios.filter(item => 
-      new Date(item.timestamp) > cutoffDate
-    );
-    analyticsData.optimizationSuggestions = analyticsData.optimizationSuggestions.filter(item => 
-      new Date(item.timestamp) > cutoffDate
-    );
-    analyticsData.performanceMetrics = analyticsData.performanceMetrics.filter(item => 
-      new Date(item.timestamp) > cutoffDate
-    );
+    // メモリ効率を考慮したデータクリーンアップ
+    const maxEntries = 1000; // 最大エントリ数を制限
+    
+    analyticsData.contextSizes = analyticsData.contextSizes
+      .filter(item => new Date(item.timestamp) > cutoffDate)
+      .slice(-maxEntries);
+      
+    analyticsData.compressionRatios = analyticsData.compressionRatios
+      .filter(item => new Date(item.timestamp) > cutoffDate)
+      .slice(-maxEntries);
+      
+    analyticsData.optimizationSuggestions = analyticsData.optimizationSuggestions
+      .filter(item => new Date(item.timestamp) > cutoffDate)
+      .slice(-maxEntries);
+      
+    analyticsData.performanceMetrics = analyticsData.performanceMetrics
+      .filter(item => new Date(item.timestamp) > cutoffDate)
+      .slice(-maxEntries);
+      
+    // メモリ使用量が95%を超えた場合は緊急クリーンアップ
+    if (memoryUsage.heapUsed / memoryUsage.heapTotal > 0.95) {
+      analyticsData.contextSizes = analyticsData.contextSizes.slice(-100);
+      analyticsData.compressionRatios = analyticsData.compressionRatios.slice(-100);
+      analyticsData.optimizationSuggestions = analyticsData.optimizationSuggestions.slice(-100);
+      analyticsData.performanceMetrics = analyticsData.performanceMetrics.slice(-100);
+      console.error(chalk.red('🚨 緊急メモリクリーンアップ実行 / Emergency memory cleanup executed'));
+    }
   }, config.analytics.metrics.collectionInterval || 5000);
 }
 
@@ -966,9 +989,35 @@ async function handleAnalyzeGitDiff(request) {
     const git = simpleGit();
     
     // Gitリポジトリかどうかをチェック
+    let isRepo = false;
     try {
-      await git.checkIsRepo();
+      isRepo = await git.checkIsRepo();
     } catch (error) {
+      // checkIsRepo()が失敗した場合は、git statusで確認
+      try {
+        await git.status();
+        isRepo = true;
+      } catch (statusError) {
+        return {
+          jsonrpc: '2.0',
+          id: request.id,
+          result: {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                error: 'Not a Git repository',
+                message: 'Current directory is not a Git repository',
+                suggestion: 'Please run this command from within a Git repository',
+                currentDirectory: process.cwd(),
+                timestamp: new Date().toISOString()
+              }, null, 2)
+            }]
+          }
+        };
+      }
+    }
+    
+    if (!isRepo) {
       return {
         jsonrpc: '2.0',
         id: request.id,
@@ -979,6 +1028,7 @@ async function handleAnalyzeGitDiff(request) {
               error: 'Not a Git repository',
               message: 'Current directory is not a Git repository',
               suggestion: 'Please run this command from within a Git repository',
+              currentDirectory: process.cwd(),
               timestamp: new Date().toISOString()
             }, null, 2)
           }]
@@ -1231,30 +1281,78 @@ async function handleAutoCompressContext(request) {
     
     switch (algorithm) {
       case 'summarization':
-        // 簡易的な要約アルゴリズム
+        // 改良された要約アルゴリズム
         const lines = context.split('\n');
-        const importantLines = lines.filter(line => 
-          line.trim().length > 0 && 
-          (line.includes('function') || line.includes('class') || line.includes('import') || line.includes('export'))
-        );
-        compressedContext = importantLines.join('\n');
-        compressionMethod = '重要行の抽出';
+        const importantLines = [];
+        const seenLines = new Set();
+        
+        // 重要度の高い行を優先的に抽出
+        const priorityPatterns = [
+          /^(function|class|interface|type|enum)\s+/,
+          /^(import|export)\s+/,
+          /^(const|let|var)\s+\w+\s*=/,
+          /^\s*\/\*\*[\s\S]*?\*\//,
+          /^\s*\/\/.*$/
+        ];
+        
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.length === 0) continue;
+          
+          // 重複行をスキップ
+          if (seenLines.has(trimmed)) continue;
+          seenLines.add(trimmed);
+          
+          // 優先パターンにマッチする行
+          const isImportant = priorityPatterns.some(pattern => pattern.test(trimmed));
+          
+          if (isImportant) {
+            importantLines.push(line);
+          } else if (trimmed.length > 20 && !trimmed.includes('//') && !trimmed.includes('/*')) {
+            // 長い行も重要とみなす
+            importantLines.push(line);
+          }
+        }
+        
+        // 圧縮率に応じて行数を制限
+        const maxLines = Math.floor(importantLines.length * compressionRatio);
+        compressedContext = importantLines.slice(0, maxLines).join('\n');
+        compressionMethod = '重要行の抽出（改良版）';
         break;
         
       case 'truncation':
         const targetLength = Math.floor(context.length * compressionRatio);
-        compressedContext = context.substring(0, targetLength) + '...';
-        compressionMethod = '末尾切り詰め';
+        // 単語の境界で切り詰め
+        if (targetLength < context.length) {
+          const truncated = context.substring(0, targetLength);
+          const lastSpaceIndex = truncated.lastIndexOf(' ');
+          if (lastSpaceIndex > targetLength * 0.8) {
+            compressedContext = truncated.substring(0, lastSpaceIndex) + '...';
+          } else {
+            compressedContext = truncated + '...';
+          }
+        } else {
+          compressedContext = context;
+        }
+        compressionMethod = '末尾切り詰め（改良版）';
         break;
         
       case 'keyword-extraction':
         const words = context.split(/\s+/);
-        const keywords = words.filter(word => 
-          word.length > 3 && 
-          !['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'its', 'may', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy', 'did', 'man', 'men', 'put', 'say', 'she', 'too', 'use'].includes(word.toLowerCase())
-        );
-        compressedContext = keywords.slice(0, Math.floor(keywords.length * compressionRatio)).join(' ');
-        compressionMethod = 'キーワード抽出';
+        const stopWords = new Set([
+          'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'its', 'may', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy', 'did', 'man', 'men', 'put', 'say', 'she', 'too', 'use', 'this', 'that', 'with', 'have', 'will', 'from', 'they', 'know', 'want', 'been', 'good', 'much', 'some', 'time', 'very', 'when', 'come', 'here', 'just', 'like', 'long', 'make', 'many', 'over', 'such', 'take', 'than', 'them', 'well', 'were'
+        ]);
+        
+        const keywords = words.filter(word => {
+          const cleanWord = word.toLowerCase().replace(/[^\w]/g, '');
+          return cleanWord.length > 3 && !stopWords.has(cleanWord);
+        });
+        
+        // 重複を除去
+        const uniqueKeywords = [...new Set(keywords)];
+        const maxKeywords = Math.floor(uniqueKeywords.length * compressionRatio);
+        compressedContext = uniqueKeywords.slice(0, maxKeywords).join(' ');
+        compressionMethod = 'キーワード抽出（改良版）';
         break;
         
       default:
@@ -1424,9 +1522,21 @@ async function handleManageContextHistory(request) {
     const context = request.params.arguments.context;
     const query = request.params.arguments.query;
     
-    // 簡易的なメモリ内履歴管理（実際の実装では永続化が必要）
+    // メモリ効率を考慮した履歴管理
     if (!global.contextHistory) {
       global.contextHistory = new Map();
+    }
+    
+    // メモリ使用量をチェックして履歴を制限
+    const maxHistoryEntries = config.contextManagement?.historyManagement?.maxHistoryEntries || 50;
+    if (global.contextHistory.size > maxHistoryEntries) {
+      // 古いエントリを削除
+      const entries = Array.from(global.contextHistory.entries());
+      entries.sort((a, b) => new Date(a[1].timestamp) - new Date(b[1].timestamp));
+      const toDelete = entries.slice(0, entries.length - maxHistoryEntries);
+      toDelete.forEach(([id]) => {
+        global.contextHistory.delete(id);
+      });
     }
     
     let result = {};
