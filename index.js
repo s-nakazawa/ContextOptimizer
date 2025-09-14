@@ -813,8 +813,13 @@ async function handleGetContextPack(request) {
   
   try {
     const query = request.params.arguments.query;
-    const files = await glob('**/*.{ts,js,tsx,jsx}', { 
-      ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'] 
+    // 設定ファイルからパターンと除外パターンを取得
+    const patterns = config.fileSearch?.patterns || ['**/*.{ts,js,tsx,jsx}'];
+    const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
+    const maxResults = config.tools?.maxResults || 10;
+    
+    const files = await glob(patterns, { 
+      ignore: excludePatterns 
     });
     
     return {
@@ -825,7 +830,7 @@ async function handleGetContextPack(request) {
           type: 'text',
           text: JSON.stringify({
             query: query,
-            files: files.slice(0, 10),
+            files: files.slice(0, maxResults),
             totalFiles: files.length,
             timestamp: new Date().toISOString()
           }, null, 2)
@@ -849,14 +854,19 @@ async function handleExtractFunction(request) {
   
   try {
     const name = request.params.arguments.name;
-    const files = await glob('**/*.{ts,js,tsx,jsx}', { 
-      ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'] 
+    // 設定ファイルからパターンと除外パターンを取得
+    const patterns = config.fileSearch?.patterns || ['**/*.{ts,js,tsx,jsx}'];
+    const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
+    const maxResults = config.tools?.maxResults || 10;
+    
+    const files = await glob(patterns, { 
+      ignore: excludePatterns 
     });
     
     let found = false;
     let content = '';
     
-    for (const file of files.slice(0, 5)) {
+    for (const file of files.slice(0, maxResults)) {
       try {
         const fileContent = readFileSync(file, 'utf8');
         if (fileContent.includes(name)) {
@@ -895,12 +905,17 @@ async function handleSearchSymbols(request) {
   
   try {
     const query = request.params.arguments.query;
-    const files = await glob('**/*.{ts,js,tsx,jsx}', { 
-      ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'] 
+    // 設定ファイルからパターンと除外パターンを取得
+    const patterns = config.fileSearch?.patterns || ['**/*.{ts,js,tsx,jsx}'];
+    const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
+    const maxResults = config.tools?.maxResults || 10;
+    
+    const files = await glob(patterns, { 
+      ignore: excludePatterns 
     });
     
     const results = [];
-    for (const file of files.slice(0, 5)) {
+    for (const file of files.slice(0, maxResults)) {
       try {
         const content = readFileSync(file, 'utf8');
         if (content.includes(query)) {
@@ -976,8 +991,11 @@ async function handleSearchFiles(request) {
     const pattern = request.params.arguments.pattern;
     const maxResults = request.params.arguments.maxResults || 20;
     
+    // 設定ファイルから除外パターンを取得
+    const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
+    
     const files = await glob(pattern, { 
-      ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'] 
+      ignore: excludePatterns 
     });
     
     return {
@@ -1310,12 +1328,16 @@ async function handleHybridSearch(request) {
     const maxResults = request.params.arguments.maxResults || 10;
     const includeContent = request.params.arguments.includeContent !== false;
     
-    const files = await glob('**/*.{ts,js,tsx,jsx,md,txt}', { 
-      ignore: ['**/node_modules/**', '**/dist/**', '**/build/**'] 
+    // 設定ファイルからパターンと除外パターンを取得
+    const patterns = config.fileSearch?.patterns || ['**/*.{ts,js,tsx,jsx,md,txt}'];
+    const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
+    
+    const files = await glob(patterns, { 
+      ignore: excludePatterns 
     });
     
     const results = [];
-    for (const file of files.slice(0, 10)) {
+    for (const file of files.slice(0, maxResults)) {
       try {
         const content = readFileSync(file, 'utf8');
         const tokens = natural.WordTokenizer().tokenize(content.toLowerCase());
