@@ -134,12 +134,110 @@ For more information, see the README.md file.`);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// プロジェクトルートの検証
+function isValidProjectRoot(path) {
+  try {
+    const indicators = [
+      'package.json',
+      '.git',
+      'src',
+      'lib',
+      'app',
+      'components',
+      'pages',
+      'public',
+      'assets'
+    ];
+    
+    const foundIndicators = indicators.filter(indicator => {
+      const fullPath = join(path, indicator);
+      return existsSync(fullPath);
+    });
+    
+    console.error(chalk.blue(`🔍 Validating project root: ${path}`));
+    console.error(chalk.gray(`  Found indicators: ${foundIndicators.join(', ') || 'none'}`));
+    
+    // package.jsonまたは.gitが存在する場合は有効とみなす
+    return foundIndicators.length > 0;
+  } catch (error) {
+    console.error(chalk.red(`❌ Error validating project root ${path}:`), error.message);
+    return false;
+  }
+}
+
 // プロジェクトルートの自動検出
 function detectProjectRoot() {
-  // 現在の作業ディレクトリをプロジェクトルートとして使用（設定ファイルで上書きされる）
-  const cwd = process.cwd();
-  console.error(chalk.yellow('⚠️  Initial PROJECT_ROOT (will be overridden by config):'), cwd);
-  return cwd;
+  // 利用可能な環境変数をログに出力
+  console.error(chalk.blue('🔍 Available environment variables:'));
+  const relevantEnvVars = [
+    'CURSOR_WORKSPACE_ROOT',
+    'VSCODE_WORKSPACE_FOLDER', 
+    'PROJECT_ROOT',
+    'PWD',
+    'CWD',
+    'WORKSPACE_ROOT',
+    'PROJECT_DIR'
+  ];
+  
+  relevantEnvVars.forEach(envVar => {
+    const value = process.env[envVar];
+    if (value) {
+      console.error(chalk.green(`  ${envVar}:`), value);
+    } else {
+      console.error(chalk.gray(`  ${envVar}:`), chalk.red('(not set)'));
+    }
+  });
+  
+  console.error(chalk.blue('🔍 process.cwd():'), process.cwd());
+  console.error(chalk.blue('🔍 __dirname:'), __dirname);
+  
+  // プロジェクトルート検出の優先順位
+  const candidates = [
+    process.env.CURSOR_WORKSPACE_ROOT,
+    process.env.VSCODE_WORKSPACE_FOLDER,
+    process.env.PROJECT_ROOT,
+    process.env.PWD,
+    process.cwd()
+  ].filter(Boolean);
+  
+  console.error(chalk.blue('🔍 Project root candidates:'));
+  candidates.forEach((candidate, index) => {
+    console.error(chalk.cyan(`  ${index + 1}.`), candidate);
+  });
+  
+  // 候補を検証して最初の有効なものを返す
+  for (const candidate of candidates) {
+    if (isValidProjectRoot(candidate)) {
+      console.error(chalk.green(`✅ Valid project root found: ${candidate}`));
+      console.error(chalk.yellow('⚠️  Initial PROJECT_ROOT (will be overridden by config):'), candidate);
+      return candidate;
+    }
+  }
+  
+  // 有効な候補が見つからない場合は、親ディレクトリを遡って探す
+  console.error(chalk.yellow('⚠️  No valid project root found in candidates, searching parent directories...'));
+  let currentDir = process.cwd();
+  let attempts = 0;
+  const maxAttempts = 5; // 最大5階層まで遡る
+  
+  while (attempts < maxAttempts) {
+    if (isValidProjectRoot(currentDir)) {
+      console.error(chalk.green(`✅ Valid project root found in parent directory: ${currentDir}`));
+      console.error(chalk.yellow('⚠️  Initial PROJECT_ROOT (will be overridden by config):'), currentDir);
+      return currentDir;
+    }
+    
+    const parentDir = dirname(currentDir);
+    if (parentDir === currentDir) break; // ルートディレクトリに到達
+    currentDir = parentDir;
+    attempts++;
+  }
+  
+  // 最後の手段としてprocess.cwd()を返す
+  const fallbackRoot = process.cwd();
+  console.error(chalk.red(`❌ No valid project root found, using fallback: ${fallbackRoot}`));
+  console.error(chalk.yellow('⚠️  Initial PROJECT_ROOT (will be overridden by config):'), fallbackRoot);
+  return fallbackRoot;
 }
 
 let PROJECT_ROOT = detectProjectRoot();
