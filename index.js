@@ -193,6 +193,7 @@ function detectProjectRoot() {
   const relevantEnvVars = [
     'CURSOR_WORKSPACE_ROOT',
     'VSCODE_WORKSPACE_FOLDER', 
+    'WORKSPACE_FOLDER_PATHS', // Cursorが設定する環境変数
     'PROJECT_ROOT',
     'PWD',
     'CWD',
@@ -233,6 +234,7 @@ function detectProjectRoot() {
   const candidates = [
     process.env.CURSOR_WORKSPACE_ROOT,
     process.env.VSCODE_WORKSPACE_FOLDER,
+    process.env.WORKSPACE_FOLDER_PATHS, // Cursorが設定する環境変数
     process.env.PROJECT_ROOT,
     process.env.PWD,
     process.cwd()
