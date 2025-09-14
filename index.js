@@ -181,14 +181,17 @@ let analyticsData = {
   startTime: new Date().toISOString()
 };
 
-// メモリクリーンアップの状態管理
+// メモリクリーンアップの状態管理 - 一時的にコメントアウト
+/*
 let memoryCleanupState = {
   lastCleanupTime: 0,
   cleanupCount: 0,
   lastMemoryUsage: 0
 };
+*/
 
-// メトリクス収集の開始（メモリ最適化版）
+// メトリクス収集の開始（メモリ最適化版）- 一時的にコメントアウト
+/*
 if (config.analytics && config.analytics.enabled && config.analytics.metrics && config.analytics.metrics.enabled) {
   setInterval(() => {
     const currentTime = new Date().toISOString();
@@ -326,6 +329,7 @@ if (config.analytics && config.analytics.enabled && config.analytics.metrics && 
     }
   }, config.analytics.metrics.collectionInterval || 10000); // 10秒間隔に変更
 }
+*/
 
 // MCP専用ログ - ファイルが実行されているかどうかを確認（stderrのみ）
 if (config.logging && config.logging.enabled && config.logging.level === 'debug') {
