@@ -546,6 +546,10 @@ async function main() {
           case 'tools/call':
             console.error(chalk.blue('🔧 ツール呼び出し / Tool call:'), request.params.name, request.params.arguments);
             
+            // ツール起動ログ
+            const toolStartTime = Date.now();
+            console.log(chalk.cyan(`✏️ ${request.params.name} started`));
+            
             switch (request.params.name) {
               case 'get_context_pack':
                 response = await handleGetContextPack(request);
@@ -608,6 +612,78 @@ async function main() {
                   }
                 };
             }
+            
+            // ツール成果ログ
+            const toolEndTime = Date.now();
+            const executionTime = toolEndTime - toolStartTime;
+            
+            if (response.result) {
+              // 成功時の成果ログ
+              const result = response.result;
+              let resultsLog = '';
+              
+              switch (request.params.name) {
+                case 'get_context_pack':
+                  resultsLog = `📦 Found ${result.files?.length || 0} relevant files, ${result.functions?.length || 0} functions`;
+                  break;
+                case 'extract_function':
+                  resultsLog = `🔍 Extracted ${result.functions?.length || 0} functions, ${result.classes?.length || 0} classes`;
+                  break;
+                case 'search_symbols':
+                  resultsLog = `🎯 Found ${result.symbols?.length || 0} symbols across ${result.files?.length || 0} files`;
+                  break;
+                case 'rollup_chat':
+                  resultsLog = `📝 Summarized ${result.originalLength || 0} chars to ${result.summarizedLength || 0} chars (${result.compressionRatio || 0}% reduction)`;
+                  break;
+                case 'search_files':
+                  resultsLog = `📁 Found ${result.files?.length || 0} files matching pattern`;
+                  break;
+                case 'read_file_content':
+                  resultsLog = `📖 Read ${result.lines?.length || 0} lines from ${result.filePath || 'file'}`;
+                  break;
+                case 'parse_ast':
+                  resultsLog = `🌳 Parsed AST: ${result.functions?.length || 0} functions, ${result.variables?.length || 0} variables, ${result.imports?.length || 0} imports`;
+                  break;
+                case 'analyze_git_diff':
+                  resultsLog = `📊 Analyzed ${result.commits?.length || 0} commits, ${result.filesChanged || 0} files changed`;
+                  break;
+                case 'optimize_performance':
+                  resultsLog = `⚡ Performance optimized: ${result.cacheHitRate || 0}% cache hit rate, ${result.memorySaved || 0}MB memory saved`;
+                  break;
+                case 'hybrid_search':
+                  resultsLog = `🔍 Hybrid search: ${result.results?.length || 0} results found with ${result.bm25Score || 0} BM25 score`;
+                  break;
+                case 'monitor_context_size':
+                  resultsLog = `📏 Context size: ${result.currentSize || 0} chars (${result.status || 'normal'})`;
+                  break;
+                case 'auto_compress_context':
+                  resultsLog = `🗜️ Compressed from ${result.originalSize || 0} to ${result.compressedSize || 0} chars (${result.compressionRatio || 0}% reduction)`;
+                  break;
+                case 'suggest_context_optimization':
+                  resultsLog = `💡 Generated ${result.suggestions?.length || 0} optimization suggestions, potential ${result.potentialSavings || 0}% savings`;
+                  break;
+                case 'manage_context_history':
+                  resultsLog = `📚 History ${result.action || 'processed'}: ${result.entries?.length || 0} entries managed`;
+                  break;
+                case 'get_context_analytics':
+                  resultsLog = `📈 Analytics: ${result.totalOperations || 0} operations, ${result.avgEfficiency || 0}% efficiency score`;
+                  break;
+                case 'get_efficiency_dashboard':
+                  resultsLog = `📊 Dashboard: ${result.efficiencyScore || 0}% efficiency, ${result.memoryUsage || 0}MB memory usage`;
+                  break;
+                case 'generate_performance_report':
+                  resultsLog = `📋 Report generated: ${result.reportType || 'summary'} report with ${result.recommendations?.length || 0} recommendations`;
+                  break;
+                default:
+                  resultsLog = `✅ Tool executed successfully`;
+              }
+              
+              console.log(chalk.green(`✏️ ${request.params.name} Results: ${resultsLog} (${executionTime}ms)`));
+            } else if (response.error) {
+              // エラー時のログ
+              console.log(chalk.red(`✏️ ${request.params.name} Error: ${response.error.message} (${executionTime}ms)`));
+            }
+            
             break;
             
           default:

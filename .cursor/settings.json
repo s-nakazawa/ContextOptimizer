@@ -1,0 +1,13 @@
+{
+  "mcp": {
+    "servers": {
+      "context-optimizer": {
+        "command": "npx",
+        "args": ["context-optimizer@latest"],
+        "env": {
+          "NODE_ENV": "production"
+        }
+      }
+    }
+  }
+}
