@@ -147,7 +147,7 @@ The server now uses a **blacklist-based approach** for better flexibility and ma
 {
   "server": {
     "name": "context-optimizer-server",
-    "version": "1.1.8",
+    "version": "1.2.0",
     "description": "Context Optimizer - Advanced MCP Server for Cursor Development with Real-time Context Monitoring, Auto Compression, Optimization Suggestions, and History Management"
   },
   "tools": {
