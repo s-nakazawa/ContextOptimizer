@@ -197,7 +197,13 @@ function detectProjectRoot() {
     'PWD',
     'CWD',
     'WORKSPACE_ROOT',
-    'PROJECT_DIR'
+    'PROJECT_DIR',
+    'CURSOR_PROJECT_ROOT',
+    'CURSOR_CURRENT_PROJECT',
+    'CURSOR_OPENED_PROJECT',
+    'VSCODE_CWD',
+    'VSCODE_PID',
+    'VSCODE_INJECTION'
   ];
   
   relevantEnvVars.forEach(envVar => {
@@ -206,6 +212,17 @@ function detectProjectRoot() {
       console.error(chalk.green(`  ${envVar}:`), value);
     } else {
       console.error(chalk.gray(`  ${envVar}:`), chalk.red('(not set)'));
+    }
+  });
+  
+  // 全ての環境変数の中で、パス関連のものを表示
+  console.error(chalk.blue('🔍 All path-related environment variables:'));
+  Object.keys(process.env).forEach(key => {
+    if (key.includes('PATH') || key.includes('ROOT') || key.includes('DIR') || key.includes('WORKSPACE') || key.includes('PROJECT')) {
+      const value = process.env[key];
+      if (value && value.includes('/')) {
+        console.error(chalk.cyan(`  ${key}:`), value);
+      }
     }
   });
   
@@ -242,16 +259,32 @@ function detectProjectRoot() {
   let attempts = 0;
   const maxAttempts = 10; // 最大10階層まで遡る
   
+  console.error(chalk.blue('🔍 Starting project root detection from:'), currentDir);
+  console.error(chalk.blue('🔍 This is the directory where MCP server was started'));
+  
   while (attempts < maxAttempts) {
     console.error(chalk.gray(`  Attempt ${attempts + 1}: ${currentDir}`));
+    
+    // このディレクトリの内容を確認
+    try {
+      const dirContents = readdirSync(currentDir);
+      console.error(chalk.gray(`    Directory contents: ${dirContents.slice(0, 10).join(', ')}${dirContents.length > 10 ? '...' : ''}`));
+    } catch (error) {
+      console.error(chalk.red(`    Error reading directory: ${error.message}`));
+    }
+    
     if (isValidProjectRoot(currentDir)) {
       console.error(chalk.green(`✅ Valid project root found: ${currentDir}`));
+      console.error(chalk.blue('🎯 This directory contains package.json or .git, indicating it is a project root'));
       console.error(chalk.yellow('⚠️  Initial PROJECT_ROOT (will be overridden by config):'), currentDir);
       return currentDir;
     }
     
     const parentDir = dirname(currentDir);
-    if (parentDir === currentDir) break; // ルートディレクトリに到達
+    if (parentDir === currentDir) {
+      console.error(chalk.red('❌ Reached root directory, stopping search'));
+      break; // ルートディレクトリに到達
+    }
     currentDir = parentDir;
     attempts++;
   }
