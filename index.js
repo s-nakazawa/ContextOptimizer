@@ -137,28 +137,49 @@ const __dirname = dirname(__filename);
 // プロジェクトルートの検証
 function isValidProjectRoot(path) {
   try {
-    const indicators = [
-      'package.json',
-      '.git',
+    // 必須の指標（package.jsonまたは.gitの存在を必須とする）
+    const requiredIndicators = ['package.json', '.git'];
+    const hasRequired = requiredIndicators.some(indicator => {
+      const fullPath = join(path, indicator);
+      return existsSync(fullPath);
+    });
+    
+    if (!hasRequired) {
+      console.error(chalk.blue(`🔍 Validating project root: ${path}`));
+      console.error(chalk.red(`  ❌ No required indicators found (package.json or .git)`));
+      return false;
+    }
+    
+    // その他の指標もチェック
+    const otherIndicators = [
       'src',
       'lib',
       'app',
       'components',
       'pages',
       'public',
-      'assets'
+      'assets',
+      'index.js',
+      'index.ts',
+      'main.js',
+      'main.ts'
     ];
     
-    const foundIndicators = indicators.filter(indicator => {
+    const foundRequired = requiredIndicators.filter(indicator => {
+      const fullPath = join(path, indicator);
+      return existsSync(fullPath);
+    });
+    
+    const foundOther = otherIndicators.filter(indicator => {
       const fullPath = join(path, indicator);
       return existsSync(fullPath);
     });
     
     console.error(chalk.blue(`🔍 Validating project root: ${path}`));
-    console.error(chalk.gray(`  Found indicators: ${foundIndicators.join(', ') || 'none'}`));
+    console.error(chalk.green(`  ✅ Required indicators: ${foundRequired.join(', ')}`));
+    console.error(chalk.gray(`  📁 Other indicators: ${foundOther.join(', ') || 'none'}`));
     
-    // package.jsonまたは.gitが存在する場合は有効とみなす
-    return foundIndicators.length > 0;
+    return true; // 必須の指標が存在する場合は有効
   } catch (error) {
     console.error(chalk.red(`❌ Error validating project root ${path}:`), error.message);
     return false;
@@ -216,11 +237,49 @@ function detectProjectRoot() {
   
   // 有効な候補が見つからない場合は、親ディレクトリを遡って探す
   console.error(chalk.yellow('⚠️  No valid project root found in candidates, searching parent directories...'));
+  
+  // 特定のパスパターンを優先的に検索
+  const priorityPaths = [
+    '/Users/charu/Library/CloudStorage/Dropbox/mac_setting/work/private',
+    '/Users/charu/Library/CloudStorage/Dropbox/mac_setting/work',
+    '/Users/charu/Library/CloudStorage/Dropbox/mac_setting',
+    '/Users/charu/Library/CloudStorage/Dropbox',
+    '/Users/charu/Library/CloudStorage',
+    '/Users/charu/Library',
+    '/Users/charu'
+  ];
+  
+  console.error(chalk.blue('🔍 Searching priority paths:'));
+  const foundProjects = [];
+  
+  for (const priorityPath of priorityPaths) {
+    console.error(chalk.cyan(`  Checking: ${priorityPath}`));
+    if (isValidProjectRoot(priorityPath)) {
+      foundProjects.push(priorityPath);
+      console.error(chalk.green(`✅ Valid project root found in priority path: ${priorityPath}`));
+    }
+  }
+  
+  if (foundProjects.length > 0) {
+    console.error(chalk.blue('📁 Found projects:'));
+    foundProjects.forEach((project, index) => {
+      console.error(chalk.green(`  ${index + 1}. ${project}`));
+    });
+    
+    // 最初に見つかったプロジェクトを返す
+    const selectedProject = foundProjects[0];
+    console.error(chalk.yellow('⚠️  Initial PROJECT_ROOT (will be overridden by config):'), selectedProject);
+    return selectedProject;
+  }
+  
+  // 優先パスで見つからない場合は、通常の親ディレクトリ検索
+  console.error(chalk.yellow('⚠️  No valid project root found in priority paths, searching parent directories...'));
   let currentDir = process.cwd();
   let attempts = 0;
-  const maxAttempts = 5; // 最大5階層まで遡る
+  const maxAttempts = 10; // 最大10階層まで遡る
   
   while (attempts < maxAttempts) {
+    console.error(chalk.gray(`  Attempt ${attempts + 1}: ${currentDir}`));
     if (isValidProjectRoot(currentDir)) {
       console.error(chalk.green(`✅ Valid project root found in parent directory: ${currentDir}`));
       console.error(chalk.yellow('⚠️  Initial PROJECT_ROOT (will be overridden by config):'), currentDir);
