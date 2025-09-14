@@ -1,8 +1,8 @@
 # Context Optimizer
 
-Advanced Model Context Protocol (MCP) server for Cursor development environments with intelligent file search, content reading, AST parsing, Git diff analysis, performance optimization, and hybrid search capabilities.
+Advanced Model Context Protocol (MCP) server for Cursor development environments with intelligent file search, content reading, AST parsing, Git diff analysis, performance optimization, hybrid search capabilities, real-time context monitoring, auto compression, optimization suggestions, and comprehensive analytics.
 
-**高度なModel Context Protocol (MCP)サーバー - Cursor開発環境向けのインテリジェントなファイル検索、コンテンツ読み込み、AST解析、Git差分分析、パフォーマンス最適化、ハイブリッド検索機能を提供**
+**高度なModel Context Protocol (MCP)サーバー - Cursor開発環境向けのインテリジェントなファイル検索、コンテンツ読み込み、AST解析、Git差分分析、パフォーマンス最適化、ハイブリッド検索、リアルタイムコンテキスト監視、自動圧縮、最適化提案、包括的アナリティクス機能を提供**
 
 ## 🚀 Features / 機能
 
@@ -127,8 +127,8 @@ Create a `config.json` file in your project root:
 {
   "server": {
     "name": "context-optimizer-server",
-    "version": "1.1.2",
-    "description": "Context Optimizer - Advanced MCP Server for Cursor Development"
+    "version": "1.1.4",
+    "description": "Context Optimizer - Advanced MCP Server for Cursor Development with Real-time Context Monitoring, Auto Compression, Optimization Suggestions, and History Management"
   },
   "tools": {
     "enabled": true,

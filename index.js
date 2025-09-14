@@ -181,6 +181,13 @@ let analyticsData = {
   startTime: new Date().toISOString()
 };
 
+// メモリクリーンアップの状態管理
+let memoryCleanupState = {
+  lastCleanupTime: 0,
+  cleanupCount: 0,
+  lastMemoryUsage: 0
+};
+
 // メトリクス収集の開始（メモリ最適化版）
 if (config.analytics && config.analytics.enabled && config.analytics.metrics && config.analytics.metrics.enabled) {
   setInterval(() => {
@@ -225,15 +232,99 @@ if (config.analytics && config.analytics.enabled && config.analytics.metrics && 
       .filter(item => new Date(item.timestamp) > cutoffDate)
       .slice(-maxEntries);
       
-    // メモリ使用量が95%を超えた場合は緊急クリーンアップ
-    if (memoryUsage.heapUsed / memoryUsage.heapTotal > 0.95) {
-      analyticsData.contextSizes = analyticsData.contextSizes.slice(-100);
-      analyticsData.compressionRatios = analyticsData.compressionRatios.slice(-100);
-      analyticsData.optimizationSuggestions = analyticsData.optimizationSuggestions.slice(-100);
-      analyticsData.performanceMetrics = analyticsData.performanceMetrics.slice(-100);
-      console.error(chalk.red('🚨 緊急メモリクリーンアップ実行 / Emergency memory cleanup executed'));
+    // メモリ使用量が70%を超えた場合は緊急クリーンアップ（閾値を下げて早期対応）
+    if (memoryUsage.heapUsed / memoryUsage.heapTotal > 0.70) {
+      const now = Date.now();
+      const timeSinceLastCleanup = now - memoryCleanupState.lastCleanupTime;
+      
+      // 15秒以内の連続クリーンアップは抑制（間隔を短く）
+      if (timeSinceLastCleanup > 15000) {
+        const beforeCleanup = {
+          contextSizes: analyticsData.contextSizes.length,
+          compressionRatios: analyticsData.compressionRatios.length,
+          optimizationSuggestions: analyticsData.optimizationSuggestions.length,
+          performanceMetrics: analyticsData.performanceMetrics.length,
+          memoryUsage: memoryUsage.heapUsed
+        };
+        
+        // より積極的なデータクリーンアップ実行（配列を大幅に削減）
+        const beforeSizes = {
+          contextSizes: analyticsData.contextSizes.length,
+          compressionRatios: analyticsData.compressionRatios.length,
+          optimizationSuggestions: analyticsData.optimizationSuggestions.length,
+          performanceMetrics: analyticsData.performanceMetrics.length
+        };
+        
+        analyticsData.contextSizes = analyticsData.contextSizes.slice(-5);
+        analyticsData.compressionRatios = analyticsData.compressionRatios.slice(-5);
+        analyticsData.optimizationSuggestions = analyticsData.optimizationSuggestions.slice(-5);
+        analyticsData.performanceMetrics = analyticsData.performanceMetrics.slice(-5);
+        
+        // ガベージコレクションを強制実行（複数回）
+        let gcExecuted = false;
+        if (global.gc) {
+          global.gc();
+          global.gc(); // 2回実行でより確実に
+          gcExecuted = true;
+        }
+        
+        // キャッシュのクリア
+        let cacheCleared = false;
+        if (performanceCache) {
+          performanceCache.flushAll();
+          cacheCleared = true;
+        }
+        
+        // グローバルコンテキスト履歴のクリア
+        let contextHistoryCleared = false;
+        if (global.contextHistory) {
+          global.contextHistory.clear();
+          contextHistoryCleared = true;
+        }
+        
+        // 追加のメモリクリーンアップ
+        if (global.gc) {
+          setTimeout(() => global.gc(), 100); // 非同期で追加実行
+        }
+        
+        // クリーンアップ後のメモリ使用量を取得
+        const afterMemoryUsage = process.memoryUsage();
+        
+        // クリーンアップ成果の計算
+        const cleanupResults = {
+          contextSizesRemoved: beforeSizes.contextSizes - analyticsData.contextSizes.length,
+          compressionRatiosRemoved: beforeSizes.compressionRatios - analyticsData.compressionRatios.length,
+          optimizationSuggestionsRemoved: beforeSizes.optimizationSuggestions - analyticsData.optimizationSuggestions.length,
+          performanceMetricsRemoved: beforeSizes.performanceMetrics - analyticsData.performanceMetrics.length,
+          memoryFreed: beforeCleanup.memoryUsage - afterMemoryUsage.heapUsed,
+          memoryUsageBefore: Math.round((beforeCleanup.memoryUsage / memoryUsage.heapTotal) * 100),
+          memoryUsageAfter: Math.round((afterMemoryUsage.heapUsed / afterMemoryUsage.heapTotal) * 100),
+          cacheCleared: cacheCleared ? 'Yes' : 'No',
+          contextHistoryCleared: contextHistoryCleared ? 'Yes' : 'No',
+          garbageCollectionExecuted: gcExecuted ? 'Yes' : 'No'
+        };
+        
+        // 状態更新
+        memoryCleanupState.lastCleanupTime = now;
+        memoryCleanupState.cleanupCount++;
+        memoryCleanupState.lastMemoryUsage = afterMemoryUsage.heapUsed;
+        
+        // 改善されたログ出力
+        console.error(chalk.red('🚨 緊急メモリクリーンアップ完了 / Emergency memory cleanup completed'));
+        console.error(chalk.yellow(`📊 クリーンアップ成果 / Cleanup Results:`));
+        console.error(chalk.yellow(`   - Context Sizes: ${cleanupResults.contextSizesRemoved}件削除`));
+        console.error(chalk.yellow(`   - Compression Ratios: ${cleanupResults.compressionRatiosRemoved}件削除`));
+        console.error(chalk.yellow(`   - Optimization Suggestions: ${cleanupResults.optimizationSuggestionsRemoved}件削除`));
+        console.error(chalk.yellow(`   - Performance Metrics: ${cleanupResults.performanceMetricsRemoved}件削除`));
+        console.error(chalk.yellow(`   - メモリ解放: ${Math.round(cleanupResults.memoryFreed / 1024 / 1024)}MB`));
+        console.error(chalk.yellow(`   - メモリ使用率: ${cleanupResults.memoryUsageBefore}% → ${cleanupResults.memoryUsageAfter}%`));
+        console.error(chalk.yellow(`   - キャッシュクリア: ${cleanupResults.cacheCleared}`));
+        console.error(chalk.yellow(`   - コンテキスト履歴クリア: ${cleanupResults.contextHistoryCleared}`));
+        console.error(chalk.yellow(`   - ガベージコレクション: ${cleanupResults.garbageCollectionExecuted}`));
+        console.error(chalk.yellow(`   - クリーンアップ回数: ${memoryCleanupState.cleanupCount}回目`));
+      }
     }
-  }, config.analytics.metrics.collectionInterval || 5000);
+  }, config.analytics.metrics.collectionInterval || 10000); // 10秒間隔に変更
 }
 
 // 最初のログ - ファイルが実行されているかどうかを確認
@@ -546,9 +637,9 @@ async function main() {
           case 'tools/call':
             console.error(chalk.blue('🔧 ツール呼び出し / Tool call:'), request.params.name, request.params.arguments);
             
-            // ツール起動ログ
+            // ツール起動ログ（stderrに出力してJSONレスポンスを汚染しない）
             const toolStartTime = Date.now();
-            console.log(chalk.cyan(`✏️ ${request.params.name} started`));
+            console.error(chalk.cyan(`[TOOL] ${request.params.name} started`));
             
             switch (request.params.name) {
               case 'get_context_pack':
@@ -624,64 +715,64 @@ async function main() {
               
               switch (request.params.name) {
                 case 'get_context_pack':
-                  resultsLog = `📦 Found ${result.files?.length || 0} relevant files, ${result.functions?.length || 0} functions`;
+                  resultsLog = `Found ${result.files?.length || 0} relevant files, ${result.functions?.length || 0} functions`;
                   break;
                 case 'extract_function':
-                  resultsLog = `🔍 Extracted ${result.functions?.length || 0} functions, ${result.classes?.length || 0} classes`;
+                  resultsLog = `Extracted ${result.functions?.length || 0} functions, ${result.classes?.length || 0} classes`;
                   break;
                 case 'search_symbols':
-                  resultsLog = `🎯 Found ${result.symbols?.length || 0} symbols across ${result.files?.length || 0} files`;
+                  resultsLog = `Found ${result.symbols?.length || 0} symbols across ${result.files?.length || 0} files`;
                   break;
                 case 'rollup_chat':
-                  resultsLog = `📝 Summarized ${result.originalLength || 0} chars to ${result.summarizedLength || 0} chars (${result.compressionRatio || 0}% reduction)`;
+                  resultsLog = `Summarized ${result.originalLength || 0} chars to ${result.summarizedLength || 0} chars (${result.compressionRatio || 0}% reduction)`;
                   break;
                 case 'search_files':
-                  resultsLog = `📁 Found ${result.files?.length || 0} files matching pattern`;
+                  resultsLog = `Found ${result.files?.length || 0} files matching pattern`;
                   break;
                 case 'read_file_content':
-                  resultsLog = `📖 Read ${result.lines?.length || 0} lines from ${result.filePath || 'file'}`;
+                  resultsLog = `Read ${result.lines?.length || 0} lines from ${result.filePath || 'file'}`;
                   break;
                 case 'parse_ast':
-                  resultsLog = `🌳 Parsed AST: ${result.functions?.length || 0} functions, ${result.variables?.length || 0} variables, ${result.imports?.length || 0} imports`;
+                  resultsLog = `Parsed AST: ${result.functions?.length || 0} functions, ${result.variables?.length || 0} variables, ${result.imports?.length || 0} imports`;
                   break;
                 case 'analyze_git_diff':
-                  resultsLog = `📊 Analyzed ${result.commits?.length || 0} commits, ${result.filesChanged || 0} files changed`;
+                  resultsLog = `Analyzed ${result.commits?.length || 0} commits, ${result.filesChanged || 0} files changed`;
                   break;
                 case 'optimize_performance':
-                  resultsLog = `⚡ Performance optimized: ${result.cacheHitRate || 0}% cache hit rate, ${result.memorySaved || 0}MB memory saved`;
+                  resultsLog = `Performance optimized: ${result.cacheHitRate || 0}% cache hit rate, ${result.memorySaved || 0}MB memory saved`;
                   break;
                 case 'hybrid_search':
-                  resultsLog = `🔍 Hybrid search: ${result.results?.length || 0} results found with ${result.bm25Score || 0} BM25 score`;
+                  resultsLog = `Hybrid search: ${result.results?.length || 0} results found with ${result.bm25Score || 0} BM25 score`;
                   break;
                 case 'monitor_context_size':
-                  resultsLog = `📏 Context size: ${result.currentSize || 0} chars (${result.status || 'normal'})`;
+                  resultsLog = `Context size: ${result.currentSize || 0} chars (${result.status || 'normal'})`;
                   break;
                 case 'auto_compress_context':
-                  resultsLog = `🗜️ Compressed from ${result.originalSize || 0} to ${result.compressedSize || 0} chars (${result.compressionRatio || 0}% reduction)`;
+                  resultsLog = `Compressed from ${result.originalSize || 0} to ${result.compressedSize || 0} chars (${result.compressionRatio || 0}% reduction)`;
                   break;
                 case 'suggest_context_optimization':
-                  resultsLog = `💡 Generated ${result.suggestions?.length || 0} optimization suggestions, potential ${result.potentialSavings || 0}% savings`;
+                  resultsLog = `Generated ${result.suggestions?.length || 0} optimization suggestions, potential ${result.potentialSavings || 0}% savings`;
                   break;
                 case 'manage_context_history':
-                  resultsLog = `📚 History ${result.action || 'processed'}: ${result.entries?.length || 0} entries managed`;
+                  resultsLog = `History ${result.action || 'processed'}: ${result.entries?.length || 0} entries managed`;
                   break;
                 case 'get_context_analytics':
-                  resultsLog = `📈 Analytics: ${result.totalOperations || 0} operations, ${result.avgEfficiency || 0}% efficiency score`;
+                  resultsLog = `Analytics: ${result.totalOperations || 0} operations, ${result.avgEfficiency || 0}% efficiency score`;
                   break;
                 case 'get_efficiency_dashboard':
-                  resultsLog = `📊 Dashboard: ${result.efficiencyScore || 0}% efficiency, ${result.memoryUsage || 0}MB memory usage`;
+                  resultsLog = `Dashboard: ${result.efficiencyScore || 0}% efficiency, ${result.memoryUsage || 0}MB memory usage`;
                   break;
                 case 'generate_performance_report':
-                  resultsLog = `📋 Report generated: ${result.reportType || 'summary'} report with ${result.recommendations?.length || 0} recommendations`;
+                  resultsLog = `Report generated: ${result.reportType || 'summary'} report with ${result.recommendations?.length || 0} recommendations`;
                   break;
                 default:
-                  resultsLog = `✅ Tool executed successfully`;
+                  resultsLog = `Tool executed successfully`;
               }
               
-              console.log(chalk.green(`✏️ ${request.params.name} Results: ${resultsLog} (${executionTime}ms)`));
+              console.error(chalk.green(`[TOOL] ${request.params.name} Results: ${resultsLog} (${executionTime}ms)`));
             } else if (response.error) {
-              // エラー時のログ
-              console.log(chalk.red(`✏️ ${request.params.name} Error: ${response.error.message} (${executionTime}ms)`));
+              // エラー時のログ（stderrに出力してJSONレスポンスを汚染しない）
+              console.error(chalk.red(`[TOOL] ${request.params.name} Error: ${response.error.message} (${executionTime}ms)`));
             }
             
             break;
@@ -1355,45 +1446,96 @@ async function handleAutoCompressContext(request) {
     let compressedContext = '';
     let compressionMethod = '';
     
+    // 言語自動検出
+    const detectedLanguage = detectLanguage(context);
+    console.error(`[DEBUG] 検出された言語=${detectedLanguage}`);
+    
     switch (algorithm) {
       case 'summarization':
-        // 改良された要約アルゴリズム
-        const lines = context.split('\n');
-        const importantLines = [];
-        const seenLines = new Set();
+        // 多言語対応の要約アルゴリズム
+        const summarySentences = splitByLanguage(context, detectedLanguage);
+        const importantSentences = [];
+        const seenSentences = new Set();
         
-        // 重要度の高い行を優先的に抽出
-        const priorityPatterns = [
-          /^(function|class|interface|type|enum)\s+/,
-          /^(import|export)\s+/,
-          /^(const|let|var)\s+\w+\s*=/,
-          /^\s*\/\*\*[\s\S]*?\*\//,
-          /^\s*\/\/.*$/
-        ];
+        // デバッグ情報
+        console.error(`[DEBUG] 元の文数=${summarySentences.length}`);
         
-        for (const line of lines) {
-          const trimmed = line.trim();
+        // 言語別重要キーワード
+        const importantKeywords = getImportantKeywords(detectedLanguage);
+        
+        for (const sentence of summarySentences) {
+          const trimmed = sentence.trim();
           if (trimmed.length === 0) continue;
           
-          // 重複行をスキップ
-          if (seenLines.has(trimmed)) continue;
-          seenLines.add(trimmed);
+          // 重複文をスキップ
+          if (seenSentences.has(trimmed)) continue;
+          seenSentences.add(trimmed);
           
-          // 優先パターンにマッチする行
-          const isImportant = priorityPatterns.some(pattern => pattern.test(trimmed));
+          // 重要度スコア計算
+          let importanceScore = 0;
           
-          if (isImportant) {
-            importantLines.push(line);
-          } else if (trimmed.length > 20 && !trimmed.includes('//') && !trimmed.includes('/*')) {
-            // 長い行も重要とみなす
-            importantLines.push(line);
+          // 1. 文の長さスコア（長い文ほど重要）
+          if (trimmed.length > 50) importanceScore += 3;
+          else if (trimmed.length > 30) importanceScore += 2;
+          else if (trimmed.length > 15) importanceScore += 1;
+          
+          // 2. キーワード含有スコア
+          const keywordCount = importantKeywords.filter(keyword => 
+            trimmed.toLowerCase().includes(keyword.toLowerCase())
+          ).length;
+          importanceScore += keywordCount * 2;
+          
+          // 3. 技術用語スコア
+          if (trimmed.includes('MCP') || trimmed.includes('Cursor') || trimmed.includes('AST')) {
+            importanceScore += 3;
+          }
+          
+          // 4. 動詞・形容詞スコア
+          if (trimmed.includes('する') || trimmed.includes('なる') || trimmed.includes('提供') || 
+              trimmed.includes('生成') || trimmed.includes('実行') || trimmed.includes('分析')) {
+            importanceScore += 1;
+          }
+          
+          // 重要度が閾値以上の文を抽出
+          if (importanceScore >= 2) {
+            importantSentences.push({
+              sentence: trimmed,
+              score: importanceScore
+            });
           }
         }
         
-        // 圧縮率に応じて行数を制限
-        const maxLines = Math.floor(importantLines.length * compressionRatio);
-        compressedContext = importantLines.slice(0, maxLines).join('\n');
-        compressionMethod = '重要行の抽出（改良版）';
+        // デバッグ情報
+        console.error(`[DEBUG] 重要文数=${importantSentences.length}`);
+        
+        // フォールバック：重要文が少なすぎる場合
+        if (importantSentences.length < 3) {
+          console.error(`[DEBUG] 重要文不足、フォールバック実行`);
+          importantSentences.length = 0;
+          for (const sentence of summarySentences) {
+            const trimmed = sentence.trim();
+            if (trimmed.length > 10) {
+              importantSentences.push({
+                sentence: trimmed,
+                score: 1
+              });
+            }
+          }
+        }
+        
+        // スコア順でソート
+        importantSentences.sort((a, b) => b.score - a.score);
+        
+        // 圧縮率に応じて文数を制限
+        const maxSentences = Math.floor(importantSentences.length * compressionRatio);
+        const selectedSentences = importantSentences.slice(0, maxSentences);
+        compressedContext = selectedSentences.map(s => s.sentence).join('。') + '。';
+        
+        // デバッグ情報
+        console.error(`[DEBUG] 最終文数=${selectedSentences.length}, 圧縮後=${maxSentences}`);
+        console.error(`[DEBUG] 抽出された文=${selectedSentences.slice(0, 3).map(s => s.sentence).join(' | ')}`);
+        
+        compressionMethod = '重要文の抽出（日本語対応版）';
         break;
         
       case 'truncation':
@@ -1414,21 +1556,52 @@ async function handleAutoCompressContext(request) {
         break;
         
       case 'keyword-extraction':
-        const words = context.split(/\s+/);
-        const stopWords = new Set([
-          'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'its', 'may', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy', 'did', 'man', 'men', 'put', 'say', 'she', 'too', 'use', 'this', 'that', 'with', 'have', 'will', 'from', 'they', 'know', 'want', 'been', 'good', 'much', 'some', 'time', 'very', 'when', 'come', 'here', 'just', 'like', 'long', 'make', 'many', 'over', 'such', 'take', 'than', 'them', 'well', 'were'
-        ]);
+        // 多言語対応のキーワード抽出
+        const keywordSentences = splitByLanguage(context, detectedLanguage);
+        const allWords = [];
         
-        const keywords = words.filter(word => {
-          const cleanWord = word.toLowerCase().replace(/[^\w]/g, '');
-          return cleanWord.length > 3 && !stopWords.has(cleanWord);
+        // 各文から単語を抽出
+        keywordSentences.forEach(sentence => {
+          if (sentence.trim().length > 0) {
+            const words = sentence.trim().split(/\s+/);
+            allWords.push(...words);
+          }
         });
+        
+        // デバッグ情報
+        console.error(`[DEBUG] 元の単語数=${allWords.length}`);
+        
+        // 言語別ストップワード
+        const stopWords = getStopWords(detectedLanguage);
+        
+        // キーワード抽出（より緩い条件）
+        let keywords = allWords.filter(word => {
+          const cleanWord = word.replace(/[^\w\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '');
+          return cleanWord.length >= 2 && !stopWords.has(cleanWord);
+        });
+        
+        // デバッグ情報
+        console.error(`[DEBUG] フィルタ後単語数=${keywords.length}`);
+        
+        // フォールバック：キーワードが少なすぎる場合
+        if (keywords.length < 5) {
+          console.error(`[DEBUG] キーワード不足、フォールバック実行`);
+          keywords = allWords.filter(word => {
+            const cleanWord = word.replace(/[^\w\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '');
+            return cleanWord.length >= 2;
+          });
+        }
         
         // 重複を除去
         const uniqueKeywords = [...new Set(keywords)];
         const maxKeywords = Math.floor(uniqueKeywords.length * compressionRatio);
         compressedContext = uniqueKeywords.slice(0, maxKeywords).join(' ');
-        compressionMethod = 'キーワード抽出（改良版）';
+        
+        // デバッグ情報
+        console.error(`[DEBUG] 最終キーワード数=${uniqueKeywords.length}, 圧縮後=${maxKeywords}`);
+        console.error(`[DEBUG] 抽出されたキーワード=${uniqueKeywords.slice(0, 10).join(', ')}`);
+        
+        compressionMethod = 'キーワード抽出（超改良版）';
         break;
         
       default:
@@ -2251,6 +2424,132 @@ function recordOptimizationSuggestions(suggestions) {
     });
   }
 }
+
+// 多言語対応ヘルパー関数
+function detectLanguage(text) {
+  const sample = text.substring(0, 1000); // 最初の1000文字で判定
+  
+  // 文字コードパターンで言語判定（改良版）
+  const patterns = {
+    'japanese': /[\u3040-\u309F\u30A0-\u30FF]/g, // ひらがな・カタカナ
+    'chinese': /[\u4E00-\u9FFF]/g, // 漢字
+    'korean': /[\uAC00-\uD7AF]/g, // ハングル
+    'arabic': /[\u0600-\u06FF]/g, // アラビア文字
+    'cyrillic': /[\u0400-\u04FF]/g, // キリル文字
+    'latin': /[a-zA-Z]/g // ラテン文字
+  };
+  
+  const scores = {};
+  for (const [lang, pattern] of Object.entries(patterns)) {
+    scores[lang] = (sample.match(pattern) || []).length;
+  }
+  
+  // 日本語の特別判定（ひらがな・カタカナがある場合は日本語優先）
+  if (scores.japanese > 0) {
+    return 'japanese';
+  }
+  
+  // 韓国語の特別判定（ハングルがある場合は韓国語優先）
+  if (scores.korean > 0) {
+    return 'korean';
+  }
+  
+  // 中国語の特別判定（漢字のみの場合は中国語）
+  if (scores.chinese > 0 && scores.japanese === 0 && scores.korean === 0) {
+    return 'chinese';
+  }
+  
+  // 英語の特別判定（ラテン文字のみの場合は英語）
+  if (scores.latin > 0 && scores.chinese === 0 && scores.japanese === 0 && scores.korean === 0) {
+    return 'english';
+  }
+  
+  // 最も多い文字コードの言語を選択
+  const detectedLang = Object.keys(scores).reduce((a, b) => scores[a] > scores[b] ? a : b);
+  
+  // デフォルトは英語
+  return scores[detectedLang] > 0 ? detectedLang : 'english';
+}
+
+function splitByLanguage(text, language) {
+  const splitPatterns = {
+    'japanese': /[。、！？\n]/,
+    'chinese': /[。，！？\n]/,
+    'korean': /[。，！？\n]/,
+    'arabic': /[.،!؟\n]/,
+    'cyrillic': /[.，!？\n]/,
+    'latin': /[.!?,\n]/,
+    'english': /[.!?,\n]/
+  };
+  
+  const pattern = splitPatterns[language] || splitPatterns['english'];
+  return text.split(pattern);
+}
+
+function getStopWords(language) {
+  const stopWordsDict = {
+    'japanese': ['は', 'が', 'を', 'に', 'で', 'と', 'の', 'も', 'から', 'まで', 'より'],
+    'chinese': ['的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这'],
+    'korean': ['은', '는', '이', '가', '을', '를', '에', '에서', '로', '으로', '와', '과', '의', '도', '만', '부터', '까지', '보다', '처럼', '같이'],
+    'arabic': ['في', 'من', 'إلى', 'على', 'أن', 'هذا', 'هذه', 'التي', 'الذي', 'كان', 'يكون', 'له', 'لها', 'لهما', 'لهم', 'لهن'],
+    'cyrillic': ['в', 'на', 'с', 'по', 'для', 'от', 'до', 'из', 'к', 'у', 'о', 'об', 'за', 'при', 'через', 'между', 'над', 'под'],
+    'latin': ['el', 'la', 'de', 'que', 'y', 'a', 'en', 'un', 'es', 'se', 'no', 'te', 'lo', 'le', 'da', 'su', 'por', 'son', 'con', 'para', 'al', 'del', 'los', 'las'],
+    'english': ['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'up', 'down', 'out', 'off', 'over', 'under', 'again', 'further', 'then', 'once']
+  };
+  
+  return new Set(stopWordsDict[language] || stopWordsDict['english']);
+}
+
+function getImportantKeywords(language) {
+  const keywordsDict = {
+    'japanese': [
+      'プロジェクト', '機能', 'システム', '開発', '設計', '実装', '最適化', 'パフォーマンス',
+      'コンテキスト', '管理', '分析', '監視', '圧縮', '提案', '履歴', '効率性',
+      'MCP', 'サーバー', 'Cursor', 'ファイル', '検索', '解析', '差分', 'ハイブリッド'
+    ],
+    'chinese': [
+      '项目', '功能', '系统', '开发', '设计', '实现', '优化', '性能',
+      '上下文', '管理', '分析', '监控', '压缩', '建议', '历史', '效率',
+      'MCP', '服务器', 'Cursor', '文件', '搜索', '解析', '差异', '混合'
+    ],
+    'korean': [
+      '프로젝트', '기능', '시스템', '개발', '설계', '구현', '최적화', '성능',
+      '컨텍스트', '관리', '분석', '모니터링', '압축', '제안', '히스토리', '효율성',
+      'MCP', '서버', 'Cursor', '파일', '검색', '분석', '차이', '하이브리드'
+    ],
+    'arabic': [
+      'مشروع', 'وظيفة', 'نظام', 'تطوير', 'تصميم', 'تنفيذ', 'تحسين', 'أداء',
+      'سياق', 'إدارة', 'تحليل', 'مراقبة', 'ضغط', 'اقتراح', 'تاريخ', 'كفاءة',
+      'MCP', 'خادم', 'Cursor', 'ملف', 'بحث', 'تحليل', 'فرق', 'مختلط'
+    ],
+    'cyrillic': [
+      'проект', 'функция', 'система', 'разработка', 'дизайн', 'реализация', 'оптимизация', 'производительность',
+      'контекст', 'управление', 'анализ', 'мониторинг', 'сжатие', 'предложение', 'история', 'эффективность',
+      'MCP', 'сервер', 'Cursor', 'файл', 'поиск', 'анализ', 'разница', 'гибридный'
+    ],
+    'latin': [
+      'proyecto', 'función', 'sistema', 'desarrollo', 'diseño', 'implementación', 'optimización', 'rendimiento',
+      'contexto', 'gestión', 'análisis', 'monitoreo', 'compresión', 'sugerencia', 'historial', 'eficiencia',
+      'MCP', 'servidor', 'Cursor', 'archivo', 'búsqueda', 'análisis', 'diferencia', 'híbrido'
+    ],
+    'english': [
+      'project', 'function', 'system', 'development', 'design', 'implementation', 'optimization', 'performance',
+      'context', 'management', 'analysis', 'monitoring', 'compression', 'suggestion', 'history', 'efficiency',
+      'MCP', 'server', 'Cursor', 'file', 'search', 'analysis', 'difference', 'hybrid'
+    ]
+  };
+  
+  return keywordsDict[language] || keywordsDict['english'];
+}
+
+// 多言語対応関数をエクスポート（テスト用）
+// ES Module対応のため、export文に変更
+export {
+  detectLanguage,
+  splitByLanguage,
+  getStopWords,
+  getImportantKeywords
+};
 
 // メイン処理を開始
 main().catch(console.error);
