@@ -309,7 +309,7 @@ if (config.analytics && config.analytics.enabled && config.analytics.metrics && 
         memoryCleanupState.cleanupCount++;
         memoryCleanupState.lastMemoryUsage = afterMemoryUsage.heapUsed;
         
-        // 改善されたログ出力
+        // MCP専用ログ出力（stderrのみ、通常ターミナルには表示しない）
         console.error(chalk.red('🚨 緊急メモリクリーンアップ完了 / Emergency memory cleanup completed'));
         console.error(chalk.yellow(`📊 クリーンアップ成果 / Cleanup Results:`));
         console.error(chalk.yellow(`   - Context Sizes: ${cleanupResults.contextSizesRemoved}件削除`));
@@ -327,27 +327,31 @@ if (config.analytics && config.analytics.enabled && config.analytics.metrics && 
   }, config.analytics.metrics.collectionInterval || 10000); // 10秒間隔に変更
 }
 
-// 最初のログ - ファイルが実行されているかどうかを確認
-console.error(chalk.green('🚀 Context Optimizer MCP Server - index.js 実行開始 / Execution started'));
-console.error(chalk.blue('📅 実行時刻 / Execution time:'), new Date().toISOString());
-console.error(chalk.yellow('🔧 Node.js バージョン / Node.js version:'), process.version);
-console.error(chalk.cyan('💻 プラットフォーム / Platform:'), process.platform, process.arch);
-console.error(chalk.magenta('📁 現在のディレクトリ / Current directory:'), process.cwd());
-console.error(chalk.red('📋 コマンドライン引数 / Command line arguments:'), process.argv);
+// MCP専用ログ - ファイルが実行されているかどうかを確認（stderrのみ）
+if (config.logging && config.logging.enabled && config.logging.level === 'debug') {
+  console.error(chalk.green('🚀 Context Optimizer MCP Server - index.js 実行開始 / Execution started'));
+  console.error(chalk.blue('📅 実行時刻 / Execution time:'), new Date().toISOString());
+  console.error(chalk.yellow('🔧 Node.js バージョン / Node.js version:'), process.version);
+  console.error(chalk.cyan('💻 プラットフォーム / Platform:'), process.platform, process.arch);
+  console.error(chalk.magenta('📁 現在のディレクトリ / Current directory:'), process.cwd());
+  console.error(chalk.red('📋 コマンドライン引数 / Command line arguments:'), process.argv);
+}
 
-// 設定情報の表示
-console.error(chalk.blue('⚙️ 設定情報 / Config info:'), JSON.stringify(config, null, 2));
+// 設定情報の表示（MCP専用ログ、デバッグモードのみ）
+if (config.logging && config.logging.enabled && config.logging.level === 'debug') {
+  console.error(chalk.blue('⚙️ 設定情報 / Config info:'), JSON.stringify(config, null, 2));
+}
 
-// パフォーマンス最適化機能の表示
-if (config.performance && config.performance.enabled) {
+// パフォーマンス最適化機能の表示（デバッグモードのみ）
+if (config.logging && config.logging.enabled && config.logging.level === 'debug' && config.performance && config.performance.enabled) {
   console.error(chalk.green('⚡ パフォーマンス最適化機能 / Performance optimization features:'));
   console.error(chalk.green('  - キャッシュ / Cache:'), config.performance.cache.enabled ? '有効 / Enabled' : '無効 / Disabled');
   console.error(chalk.green('  - 並列処理 / Parallel:'), config.performance.parallel.enabled ? '有効 / Enabled' : '無効 / Disabled');
   console.error(chalk.green('  - メモリ監視 / Memory:'), config.performance.memory.enabled ? '有効 / Enabled' : '無効 / Disabled');
 }
 
-// ハイブリッド検索機能の表示
-if (config.hybridSearch && config.hybridSearch.enabled) {
+// ハイブリッド検索機能の表示（デバッグモードのみ）
+if (config.logging && config.logging.enabled && config.logging.level === 'debug' && config.hybridSearch && config.hybridSearch.enabled) {
   console.error(chalk.blue('🔍 ハイブリッド検索機能 / Hybrid search features:'));
   console.error(chalk.blue('  - BM25検索 / BM25 Search:'), config.hybridSearch.bm25.enabled ? '有効 / Enabled' : '無効 / Disabled');
   console.error(chalk.blue('  - ベクトル検索 / Vector Search:'), config.hybridSearch.vector.enabled ? '有効 / Enabled' : '無効 / Disabled');
@@ -356,7 +360,9 @@ if (config.hybridSearch && config.hybridSearch.enabled) {
 
 // MCPサーバーのメイン処理
 async function main() {
-  console.error(chalk.green('🚀 Context Optimizer MCP Server メイン処理開始 / Main process started'));
+  if (config.logging && config.logging.enabled && config.logging.level === 'debug') {
+    console.error(chalk.green('🚀 Context Optimizer MCP Server メイン処理開始 / Main process started'));
+  }
   
   // 標準入力を監視
   process.stdin.on('data', async (data) => {
