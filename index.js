@@ -73,14 +73,17 @@ const __dirname = dirname(__filename);
 function detectProjectRoot() {
   // 環境変数からプロジェクトルートを取得
   if (process.env.PROJECT_ROOT) {
+    console.error(chalk.blue('🎯 PROJECT_ROOT from env:'), process.env.PROJECT_ROOT);
     return process.env.PROJECT_ROOT;
   }
   
   // 現在の作業ディレクトリをプロジェクトルートとして使用
-  return process.cwd();
+  const cwd = process.cwd();
+  console.error(chalk.yellow('⚠️  Using current working directory:'), cwd);
+  return cwd;
 }
 
-const PROJECT_ROOT = detectProjectRoot();
+let PROJECT_ROOT = detectProjectRoot();
 
 let config = {
   server: {
@@ -217,6 +220,12 @@ try {
     const configData = readFileSync(configPath, 'utf8');
     config = { ...config, ...JSON.parse(configData) };
     console.error(chalk.green('✅ 設定ファイル読み込み成功 / Config file loaded successfully'));
+    
+    // 設定ファイル読み込み後にプロジェクトルートを再設定
+    if (config.project && config.project.root) {
+      PROJECT_ROOT = config.project.root;
+      console.error(chalk.blue('🎯 PROJECT_ROOT from config:'), PROJECT_ROOT);
+    }
   } else {
     console.error(chalk.yellow('⚠️  設定ファイルが見つかりません / Config file not found'));
   }
@@ -908,14 +917,14 @@ async function handleGetContextPack(request) {
     const maxResults = config.tools?.maxResults || 10;
     
     // プロジェクトルートを基準にファイル検索
-    const searchPattern = config.project?.root ? 
-      `${config.project.root}/**/*` : 
-      '**/*';
+    console.error(chalk.blue('🔍 Searching in project root:'), PROJECT_ROOT);
     
-    const files = await glob(searchPattern, { 
+    const files = await glob('**/*', { 
       ignore: excludePatterns,
-      cwd: config.project?.root || process.cwd()
+      cwd: PROJECT_ROOT
     });
+    
+    console.error(chalk.green('📁 Found files:'), files.length);
     
     return {
       jsonrpc: '2.0',
@@ -965,9 +974,14 @@ async function handleExtractFunction(request) {
     const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
     const maxResults = config.tools?.maxResults || 10;
     
+    console.error(chalk.blue('🔍 Extract function search in:'), PROJECT_ROOT);
+    
     const files = await glob('**/*', { 
-      ignore: excludePatterns 
+      ignore: excludePatterns,
+      cwd: PROJECT_ROOT
     });
+    
+    console.error(chalk.green('📁 Found files:'), files.length);
     
     let found = false;
     let content = '';
@@ -1027,9 +1041,14 @@ async function handleSearchSymbols(request) {
     const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
     const maxResults = config.tools?.maxResults || 10;
     
+    console.error(chalk.blue('🔍 Search symbols in:'), PROJECT_ROOT);
+    
     const files = await glob('**/*', { 
-      ignore: excludePatterns 
+      ignore: excludePatterns,
+      cwd: PROJECT_ROOT
     });
+    
+    console.error(chalk.green('📁 Found files:'), files.length);
     
     const results = [];
     for (const file of files.slice(0, maxResults)) {
@@ -1124,14 +1143,14 @@ async function handleSearchFiles(request) {
     const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
     
     // プロジェクトルートを基準にファイル検索
-    const searchPattern = config.project?.root ? 
-      `${config.project.root}/${pattern}` : 
-      pattern;
+    console.error(chalk.blue('🔍 Searching pattern:'), pattern, 'in:', PROJECT_ROOT);
     
-    const files = await glob(searchPattern, { 
+    const files = await glob(pattern, { 
       ignore: excludePatterns,
-      cwd: config.project?.root || process.cwd()
+      cwd: PROJECT_ROOT
     });
+    
+    console.error(chalk.green('📁 Found files:'), files.length);
     
     return {
       jsonrpc: '2.0',
@@ -1370,7 +1389,9 @@ async function handleAnalyzeGitDiff(request) {
     const includeStats = request.params.arguments.includeStats !== false;
     const format = request.params.arguments.format || 'unified';
     
-    const git = simpleGit();
+    // プロジェクトルートでGitを実行
+    console.error(chalk.blue('🔍 Git analysis in project root:'), PROJECT_ROOT);
+    const git = simpleGit(PROJECT_ROOT);
     
     // Gitリポジトリかどうかをチェック
     let isRepo = false;
@@ -1534,14 +1555,14 @@ async function handleHybridSearch(request) {
     const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
     
     // プロジェクトルートを基準にファイル検索
-    const searchPatterns = config.project?.root ? 
-      patterns.map(pattern => `${config.project.root}/${pattern}`) : 
-      patterns;
+    console.error(chalk.blue('🔍 Hybrid search patterns:'), patterns, 'in:', PROJECT_ROOT);
     
-    const files = await glob(searchPatterns, { 
+    const files = await glob(patterns, { 
       ignore: excludePatterns,
-      cwd: config.project?.root || process.cwd()
+      cwd: PROJECT_ROOT
     });
+    
+    console.error(chalk.green('📁 Found files for hybrid search:'), files.length);
     
     const results = [];
     for (const file of files.slice(0, maxResults)) {

@@ -1,8 +1,15 @@
 {
   "server": {
     "name": "context-optimizer-server",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "description": "Context Optimizer - Advanced MCP Server for Cursor Development with File Search, Content Reading, AST Parsing, Git Diff Analysis, Performance Optimization and Hybrid Search"
+  },
+  "project": {
+    "name": "MeowTrack",
+    "root": "/Users/charu/Library/CloudStorage/Dropbox/mac_setting/work/private/MeowTrack",
+    "type": "typescript",
+    "framework": "hono",
+    "autoDetect": true
   },
   "tools": {
     "enabled": true,
