@@ -235,9 +235,26 @@ function detectProjectRoot() {
     }
   }
   
-  // 有効な候補が見つからない場合は、環境変数からの確実な情報のみを使用
-  console.error(chalk.yellow('⚠️  No valid project root found in candidates'));
-  console.error(chalk.red('❌ Please set PROJECT_ROOT environment variable in MCP configuration'));
+  // 有効な候補が見つからない場合は、現在の作業ディレクトリからプロジェクトルートを自動検出
+  console.error(chalk.yellow('⚠️  No valid project root found in candidates, auto-detecting from current directory...'));
+  
+  let currentDir = process.cwd();
+  let attempts = 0;
+  const maxAttempts = 10; // 最大10階層まで遡る
+  
+  while (attempts < maxAttempts) {
+    console.error(chalk.gray(`  Attempt ${attempts + 1}: ${currentDir}`));
+    if (isValidProjectRoot(currentDir)) {
+      console.error(chalk.green(`✅ Valid project root found: ${currentDir}`));
+      console.error(chalk.yellow('⚠️  Initial PROJECT_ROOT (will be overridden by config):'), currentDir);
+      return currentDir;
+    }
+    
+    const parentDir = dirname(currentDir);
+    if (parentDir === currentDir) break; // ルートディレクトリに到達
+    currentDir = parentDir;
+    attempts++;
+  }
   
   // 最後の手段としてprocess.cwd()を返す
   const fallbackRoot = process.cwd();
