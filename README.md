@@ -128,8 +128,47 @@ Cursor: "Show development efficiency"
 
 ## ⚙️ Configuration / 設定
 
-Create a `config.json` file in your project root:
-プロジェクトルートに`config.json`ファイルを作成:
+### Project-Specific Configuration / プロジェクト固有の設定
+
+Create a `.context-optimizer.config` file in your project root:
+プロジェクトルートに`.context-optimizer.config`ファイルを作成:
+
+```bash
+# Copy the example configuration
+# サンプル設定をコピー
+cp .context-optimizer.config.example .context-optimizer.config
+
+# Edit the configuration file
+# 設定ファイルを編集
+nano .context-optimizer.config
+```
+
+### Configuration File Priority / 設定ファイルの優先順位
+
+The server looks for configuration files in the following order:
+サーバーは以下の順序で設定ファイルを探します:
+
+1. **PROJECT_ROOT/.context-optimizer.config** (project-specific / プロジェクト固有)
+2. **package_directory/config.json** (fallback / フォールバック)
+
+### Path Rules / パス規則
+
+- **PROJECT_ROOT**: Must be an absolute path / 絶対パスである必要があります
+- **All other paths**: Relative to PROJECT_ROOT / PROJECT_ROOTからの相対パス
+- **Path separators**: Use forward slashes (/) / フォワードスラッシュ (/) を使用
+
+### Configuration Help / 設定ヘルプ
+
+```bash
+# Show configuration help
+# 設定ヘルプを表示
+context-optimizer --config-help
+```
+
+### Legacy Configuration / 従来の設定
+
+For backward compatibility, you can still use `config.json`:
+後方互換性のため、`config.json`も使用できます:
 
 ### Blacklist-based Configuration / ブラックリストベース設定
 
@@ -147,8 +186,15 @@ The server now uses a **blacklist-based approach** for better flexibility and ma
 {
   "server": {
     "name": "context-optimizer-server",
-    "version": "1.2.0",
-    "description": "Context Optimizer - Advanced MCP Server for Cursor Development with Real-time Context Monitoring, Auto Compression, Optimization Suggestions, and History Management"
+    "version": "1.2.2",
+    "description": "Context Optimizer - Advanced MCP Server for Cursor Development with File Search, Content Reading, AST Parsing, Git Diff Analysis, Performance Optimization and Hybrid Search"
+  },
+  "project": {
+    "name": "YourProjectName",
+    "root": "/absolute/path/to/your/project",
+    "type": "typescript",
+    "framework": "react",
+    "autoDetect": true
   },
   "tools": {
     "enabled": true,

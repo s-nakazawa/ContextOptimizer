@@ -43,7 +43,7 @@ if (args.includes('--help') || args.includes('-h')) {
   const __dirname = dirname(__filename);
   const configPath = join(__dirname, 'config.json');
   
-  let version = '1.1.8'; // デフォルトバージョン
+  let version = '1.2.2'; // デフォルトバージョン
   if (existsSync(configPath)) {
     try {
       const configData = JSON.parse(readFileSync(configPath, 'utf8'));
@@ -60,8 +60,73 @@ Usage: node index.js [options]
 Options:
   --version, -v    Show version number
   --help, -h       Show this help message
+  --config-help    Show configuration help
+
+Configuration:
+  The server looks for configuration files in the following order:
+  1. PROJECT_ROOT/.context-optimizer.config (project-specific)
+  2. package_directory/config.json (fallback)
+
+  To create a project-specific configuration:
+  1. Copy .context-optimizer.config.example to your project root
+  2. Rename it to .context-optimizer.config
+  3. Update the "project.root" field with your absolute project path
 
 For MCP server usage, run without arguments and connect via Cursor.`);
+  process.exit(0);
+}
+
+if (args.includes('--config-help')) {
+  console.log(`Context Optimizer Configuration Help
+
+Configuration File: .context-optimizer.config
+
+Place this file in your project root directory. The server will automatically
+detect and use it for project-specific settings.
+
+Key Configuration Sections:
+
+1. project:
+   - name: Your project name
+   - root: ABSOLUTE path to your project directory
+   - type: Project type (typescript, javascript, python, etc.)
+   - framework: Framework used (react, vue, angular, etc.)
+
+2. fileSearch:
+   - patterns: File patterns to search (relative to PROJECT_ROOT)
+   - excludePatterns: Patterns to exclude (relative to PROJECT_ROOT)
+   - maxResults: Maximum number of search results
+
+3. performance:
+   - cache: Cache settings (TTL, max keys)
+   - parallel: Parallel processing settings
+   - memory: Memory usage limits
+
+4. contextManagement:
+   - monitoring: Context size monitoring
+   - autoCompression: Automatic compression settings
+   - optimizationSuggestions: Optimization suggestions
+
+Path Rules:
+- PROJECT_ROOT must be an absolute path
+- All other paths are relative to PROJECT_ROOT
+- Use forward slashes (/) for path separators
+
+Example:
+{
+  "project": {
+    "name": "MyProject",
+    "root": "/Users/username/projects/my-project",
+    "type": "typescript",
+    "framework": "react"
+  },
+  "fileSearch": {
+    "patterns": ["src/**/*.{ts,tsx}", "public/**/*"],
+    "excludePatterns": ["**/node_modules/**", "**/dist/**"]
+  }
+}
+
+For more information, see the README.md file.`);
   process.exit(0);
 }
 
@@ -214,24 +279,50 @@ let config = {
 };
 
 // 設定ファイルの読み込み
-try {
+function loadConfigFile() {
+  // 1. プロジェクトルートの .context-optimizer.config を優先
+  const projectConfigPath = join(PROJECT_ROOT, '.context-optimizer.config');
+  if (existsSync(projectConfigPath)) {
+    try {
+      const configData = readFileSync(projectConfigPath, 'utf8');
+      config = { ...config, ...JSON.parse(configData) };
+      console.error(chalk.green('✅ プロジェクト設定ファイル読み込み成功 / Project config file loaded successfully:'), projectConfigPath);
+      
+      // プロジェクトルートを再設定
+      if (config.project && config.project.root) {
+        PROJECT_ROOT = config.project.root;
+        console.error(chalk.blue('🎯 PROJECT_ROOT from project config:'), PROJECT_ROOT);
+      }
+      return true;
+    } catch (error) {
+      console.error(chalk.red('❌ プロジェクト設定ファイル読み込みエラー / Project config file loading error:'), error.message);
+    }
+  }
+  
+  // 2. フォールバック: 従来の config.json
   const configPath = join(__dirname, 'config.json');
   if (existsSync(configPath)) {
-    const configData = readFileSync(configPath, 'utf8');
-    config = { ...config, ...JSON.parse(configData) };
-    console.error(chalk.green('✅ 設定ファイル読み込み成功 / Config file loaded successfully'));
-    
-    // 設定ファイル読み込み後にプロジェクトルートを再設定
-    if (config.project && config.project.root) {
-      PROJECT_ROOT = config.project.root;
-      console.error(chalk.blue('🎯 PROJECT_ROOT from config:'), PROJECT_ROOT);
+    try {
+      const configData = readFileSync(configPath, 'utf8');
+      config = { ...config, ...JSON.parse(configData) };
+      console.error(chalk.green('✅ デフォルト設定ファイル読み込み成功 / Default config file loaded successfully'));
+      
+      // 設定ファイル読み込み後にプロジェクトルートを再設定
+      if (config.project && config.project.root) {
+        PROJECT_ROOT = config.project.root;
+        console.error(chalk.blue('🎯 PROJECT_ROOT from default config:'), PROJECT_ROOT);
+      }
+      return true;
+    } catch (error) {
+      console.error(chalk.red('❌ デフォルト設定ファイル読み込みエラー / Default config file loading error:'), error.message);
     }
-  } else {
-    console.error(chalk.yellow('⚠️  設定ファイルが見つかりません / Config file not found'));
   }
-} catch (error) {
-  console.error(chalk.red('❌ 設定ファイル読み込みエラー / Config file loading error:'), error.message);
+  
+  console.error(chalk.yellow('⚠️  設定ファイルが見つかりません / Config file not found'));
+  return false;
 }
+
+loadConfigFile();
 
 // パフォーマンス最適化機能の初期化
 let performanceCache = null;

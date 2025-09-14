@@ -1,6 +1,6 @@
 {
   "name": "context-optimizer",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "description": "Context Optimizer MCP Server - Advanced MCP Server for Cursor Development with File Search, Content Reading, AST Parsing, Git Diff Analysis, Performance Optimization and Hybrid Search",
   "type": "module",
   "main": "index.js",
@@ -10,6 +10,7 @@
   "files": [
     "index.js",
     "config.json",
+    ".context-optimizer.config.example",
     "context-optimizer-config.json",
     "context-optimizer-env-example.txt",
     "context-optimizer-cursor-settings-example.json",

@@ -173,3 +173,6 @@ search-index/
 vector-index/
 *.backup
 *.tmp
+
+# Project-specific configuration (should not be committed)
+.context-optimizer.config
