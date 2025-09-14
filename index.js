@@ -1181,6 +1181,76 @@ async function handleGetContextPack(request) {
   // 最初のコマンドが呼ばれた時点でプロジェクト配下の設定ファイルを読み込む
   ensureConfigLoaded();
   
+  // ツール呼び出しリクエストの詳細ログ出力
+  console.error(chalk.magenta('🔍 Tool call request details:'));
+  console.error(chalk.cyan('  Request ID:'), request.id);
+  console.error(chalk.cyan('  Method:'), request.method);
+  console.error(chalk.cyan('  Params:'), JSON.stringify(request.params, null, 2));
+  
+  if (request.meta) {
+    console.error(chalk.cyan('  Meta:'), JSON.stringify(request.meta, null, 2));
+  }
+  
+  if (request.context) {
+    console.error(chalk.cyan('  Context:'), JSON.stringify(request.context, null, 2));
+  }
+  
+  // ツール呼び出し時の作業ディレクトリと環境変数を確認
+  console.error(chalk.blue('🔍 Tool call context:'));
+  console.error(chalk.cyan('  Current working directory:'), process.cwd());
+  console.error(chalk.cyan('  Environment variables:'));
+  Object.keys(process.env).forEach(key => {
+    if (key.includes('PATH') || key.includes('ROOT') || key.includes('DIR') || 
+        key.includes('WORKSPACE') || key.includes('PROJECT') || key.includes('CURSOR')) {
+      const value = process.env[key];
+      if (value && value.includes('/')) {
+        console.error(chalk.gray(`    ${key}:`), value);
+      }
+    }
+  });
+  
+  // ツール呼び出し時に渡される情報からプロジェクト情報を検出
+  console.error(chalk.blue('🔍 Project detection from tool call:'));
+  
+  // 1. リクエストパラメータからプロジェクト情報を検出
+  if (request.params && request.params.arguments) {
+    const args = request.params.arguments;
+    if (args.projectRoot || args.projectPath || args.workspaceRoot) {
+      console.error(chalk.green('  ✅ Project root found in request params:'));
+      console.error(chalk.gray('    projectRoot:'), args.projectRoot);
+      console.error(chalk.gray('    projectPath:'), args.projectPath);
+      console.error(chalk.gray('    workspaceRoot:'), args.workspaceRoot);
+    }
+  }
+  
+  // 2. メタデータからプロジェクト情報を検出
+  if (request.meta) {
+    if (request.meta.projectRoot || request.meta.projectPath || request.meta.workspaceRoot) {
+      console.error(chalk.green('  ✅ Project root found in request meta:'));
+      console.error(chalk.gray('    projectRoot:'), request.meta.projectRoot);
+      console.error(chalk.gray('    projectPath:'), request.meta.projectPath);
+      console.error(chalk.gray('    workspaceRoot:'), request.meta.workspaceRoot);
+    }
+  }
+  
+  // 3. コンテキストからプロジェクト情報を検出
+  if (request.context) {
+    if (request.context.projectRoot || request.context.projectPath || request.context.workspaceRoot) {
+      console.error(chalk.green('  ✅ Project root found in request context:'));
+      console.error(chalk.gray('    projectRoot:'), request.context.projectRoot);
+      console.error(chalk.gray('    projectPath:'), request.context.projectPath);
+      console.error(chalk.gray('    workspaceRoot:'), request.context.workspaceRoot);
+    }
+  }
+  
+  // 4. 現在の作業ディレクトリがプロジェクトルートかどうか確認
+  const currentCwd = process.cwd();
+  if (isValidProjectRoot(currentCwd)) {
+    console.error(chalk.green('  ✅ Current working directory is a valid project root:'), currentCwd);
+  } else {
+    console.error(chalk.yellow('  ⚠️  Current working directory is not a valid project root:'), currentCwd);
+  }
+  
   console.error(chalk.blue('🔍 get_context_pack 実行中 / Executing get_context_pack:'), request.params.arguments.query);
   
   try {
