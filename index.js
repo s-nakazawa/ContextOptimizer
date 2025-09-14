@@ -235,62 +235,9 @@ function detectProjectRoot() {
     }
   }
   
-  // 有効な候補が見つからない場合は、親ディレクトリを遡って探す
-  console.error(chalk.yellow('⚠️  No valid project root found in candidates, searching parent directories...'));
-  
-  // 特定のパスパターンを優先的に検索
-  const priorityPaths = [
-    '/Users/charu/Library/CloudStorage/Dropbox/mac_setting/work/private',
-    '/Users/charu/Library/CloudStorage/Dropbox/mac_setting/work',
-    '/Users/charu/Library/CloudStorage/Dropbox/mac_setting',
-    '/Users/charu/Library/CloudStorage/Dropbox',
-    '/Users/charu/Library/CloudStorage',
-    '/Users/charu/Library',
-    '/Users/charu'
-  ];
-  
-  console.error(chalk.blue('🔍 Searching priority paths:'));
-  const foundProjects = [];
-  
-  for (const priorityPath of priorityPaths) {
-    console.error(chalk.cyan(`  Checking: ${priorityPath}`));
-    if (isValidProjectRoot(priorityPath)) {
-      foundProjects.push(priorityPath);
-      console.error(chalk.green(`✅ Valid project root found in priority path: ${priorityPath}`));
-    }
-  }
-  
-  if (foundProjects.length > 0) {
-    console.error(chalk.blue('📁 Found projects:'));
-    foundProjects.forEach((project, index) => {
-      console.error(chalk.green(`  ${index + 1}. ${project}`));
-    });
-    
-    // 最初に見つかったプロジェクトを返す
-    const selectedProject = foundProjects[0];
-    console.error(chalk.yellow('⚠️  Initial PROJECT_ROOT (will be overridden by config):'), selectedProject);
-    return selectedProject;
-  }
-  
-  // 優先パスで見つからない場合は、通常の親ディレクトリ検索
-  console.error(chalk.yellow('⚠️  No valid project root found in priority paths, searching parent directories...'));
-  let currentDir = process.cwd();
-  let attempts = 0;
-  const maxAttempts = 10; // 最大10階層まで遡る
-  
-  while (attempts < maxAttempts) {
-    console.error(chalk.gray(`  Attempt ${attempts + 1}: ${currentDir}`));
-    if (isValidProjectRoot(currentDir)) {
-      console.error(chalk.green(`✅ Valid project root found in parent directory: ${currentDir}`));
-      console.error(chalk.yellow('⚠️  Initial PROJECT_ROOT (will be overridden by config):'), currentDir);
-      return currentDir;
-    }
-    
-    const parentDir = dirname(currentDir);
-    if (parentDir === currentDir) break; // ルートディレクトリに到達
-    currentDir = parentDir;
-    attempts++;
-  }
+  // 有効な候補が見つからない場合は、環境変数からの確実な情報のみを使用
+  console.error(chalk.yellow('⚠️  No valid project root found in candidates'));
+  console.error(chalk.red('❌ Please set PROJECT_ROOT environment variable in MCP configuration'));
   
   // 最後の手段としてprocess.cwd()を返す
   const fallbackRoot = process.cwd();
@@ -498,6 +445,17 @@ function loadConfigFile() {
   return false;
 }
 
+// 最初のコマンドが呼ばれた時点でプロジェクト配下の設定ファイルを読み込む
+let configLoaded = false;
+function ensureConfigLoaded() {
+  if (!configLoaded) {
+    console.error(chalk.blue('🔧 Loading configuration on first command...'));
+    loadConfigFile();
+    configLoaded = true;
+  }
+}
+
+// 初期設定ファイルの読み込み（フォールバック用）
 loadConfigFile();
 
 // 最終的なPROJECT_ROOTを表示
@@ -1170,6 +1128,9 @@ async function main() {
 
 // ツールハンドラー関数
 async function handleGetContextPack(request) {
+  // 最初のコマンドが呼ばれた時点でプロジェクト配下の設定ファイルを読み込む
+  ensureConfigLoaded();
+  
   console.error(chalk.blue('🔍 get_context_pack 実行中 / Executing get_context_pack:'), request.params.arguments.query);
   
   try {
