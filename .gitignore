@@ -1,3 +1,5 @@
+# Context Optimizer MCP Server .gitignore
+
 # Dependencies
 node_modules/
 npm-debug.log*
@@ -17,16 +19,16 @@ coverage/
 # nyc test coverage
 .nyc_output
 
-# Grunt intermediate storage (https://gruntjs.com/creating-plugins#storing-task-files)
+# Grunt intermediate storage
 .grunt
 
-# Bower dependency directory (https://bower.io/)
+# Bower dependency directory
 bower_components
 
 # node-waf configuration
 .lock-wscript
 
-# Compiled binary addons (https://nodejs.org/api/addons.html)
+# Compiled binary addons
 build/Release
 
 # Dependency directories
@@ -59,10 +61,10 @@ jspm_packages/
 # dotenv environment variables file
 .env
 .env.test
-.env.production
 .env.local
+.env.production
 
-# parcel-bundler cache (https://parceljs.org/)
+# parcel-bundler cache
 .cache
 .parcel-cache
 
@@ -100,7 +102,6 @@ lib-cov
 
 # Coverage directory used by tools like istanbul
 coverage
-*.lcov
 
 # Grunt intermediate storage (https://gruntjs.com/creating-plugins#storing-task-files)
 .grunt
@@ -118,20 +119,14 @@ build/Release
 node_modules/
 jspm_packages/
 
-# TypeScript cache
-*.tsbuildinfo
+# TypeScript v1 declaration files
+typings/
 
 # Optional npm cache directory
 .npm
 
 # Optional eslint cache
 .eslintcache
-
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
 
 # Optional REPL history
 .node_repl_history
@@ -144,53 +139,37 @@ jspm_packages/
 
 # dotenv environment variables file
 .env
-.env.test
-.env.production
-.env.local
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
 
-# Next.js build output
+# next.js build output
 .next
 
-# Nuxt.js build / generate output
+# nuxt.js build output
 .nuxt
-dist
 
-# Gatsby files
-.cache/
-public
+# vuepress build output
+.vuepress/dist
 
-# Storybook build outputs
-.out
-.storybook-out
+# Serverless directories
+.serverless
 
-# Temporary folders
-tmp/
-temp/
+# FuseBox cache
+.fusebox/
 
-# Logs
-logs
-*.log
+# DynamoDB Local files
+.dynamodb/
 
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# TernJS port file
+.tern-port
 
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
 
-# MCP specific
-.mcp-cache/
-.mcp-logs/
+# Context Optimizer specific
+search-index/
+vector-index/
+*.backup
+*.tmp

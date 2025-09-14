@@ -1,20 +1,28 @@
 {
-  "name": "context-optimizer",
-  "version": "1.2.0",
-  "description": "Context Optimizer - Advanced MCP Server for Cursor Development with Real-time Context Monitoring, Auto Compression, Optimization Suggestions, and History Management",
+  "name": "context-optimizer-mcp-server",
+  "version": "1.2.1",
+  "description": "Context Optimizer MCP Server - Advanced MCP Server for Cursor Development with File Search, Content Reading, AST Parsing, Git Diff Analysis, Performance Optimization and Hybrid Search",
   "type": "module",
   "main": "index.js",
   "bin": {
-    "context-optimizer": "index.js"
+    "context-optimizer-mcp-server": "index.js"
   },
   "files": [
     "index.js",
     "config.json",
+    "context-optimizer-config.json",
+    "context-optimizer-env-example.txt",
+    "context-optimizer-cursor-settings-example.json",
+    "CONTEXT-OPTIMIZER-README.md",
     "README.md"
   ],
   "scripts": {
     "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "node index.js",
+    "build": "echo \"No build step required\"",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepublishOnly": "echo \"Preparing for npm publish...\"",
+    "postpublish": "echo \"Published to npm successfully!\""
   },
   "dependencies": {
     "chalk": "^4.1.2",
@@ -28,7 +36,7 @@
     "mcp",
     "model-context-protocol",
     "cursor",
-    "context-optimization",
+    "context-optimizer",
     "context-management",
     "real-time-monitoring",
     "auto-compression",
@@ -41,7 +49,14 @@
     "git",
     "performance",
     "ai-assistant",
-    "development-tools"
+    "development-tools",
+    "file-search",
+    "hybrid-search",
+    "bm25",
+    "vector-search",
+    "ast-parsing",
+    "git-diff",
+    "performance-optimization"
   ],
   "author": "charu",
   "license": "MIT",
@@ -52,6 +67,10 @@
   "homepage": "https://github.com/s-nakazawa/ContextOptimizer-",
   "bugs": {
     "url": "https://github.com/s-nakazawa/ContextOptimizer-/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "engines": {
     "node": ">=18.0.0"

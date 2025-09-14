@@ -1,0 +1,57 @@
+# Context Optimizer MCP Server Environment Variables
+# このファイルを .env にコピーして使用してください
+# Context Optimizer専用の環境変数設定ファイル
+
+# プロジェクト設定
+PROJECT_NAME=MeowTrack
+PROJECT_ROOT=/Users/charu/Library/CloudStorage/Dropbox/mac_setting/work/private/MeowTrack
+PROJECT_TYPE=typescript
+PROJECT_FRAMEWORK=hono
+
+# MCP設定
+MCP_SERVER_NAME=context-optimizer-mcp-server
+MCP_SERVER_VERSION=1.2.1
+
+# 検索設定
+SEARCH_PATTERNS=**/*.{ts,tsx,js,jsx},**/*.{py,java,go,rs},**/*.{md,txt,json,yaml,yml}
+EXCLUDE_PATTERNS=**/node_modules/**,**/dist/**,**/build/**,**/.git/**,**/coverage/**
+MAX_SEARCH_RESULTS=100
+SEARCH_BUDGET_TOKENS=10000
+
+# ファイル設定
+MAX_FILE_SIZE=200000
+AST_MAX_FILE_SIZE=100000
+
+# パフォーマンス設定
+CACHE_TTL=600
+CACHE_MAX_KEYS=2000
+PARALLEL_MAX_CONCURRENCY=8
+MEMORY_MAX_USAGE=209715200
+
+# ハイブリッド検索設定
+BM25_ENABLED=true
+VECTOR_ENABLED=true
+BM25_K1=1.2
+BM25_B=0.75
+VECTOR_DIMENSIONS=384
+VECTOR_SIMILARITY_THRESHOLD=0.7
+AUTO_INDEX=true
+INDEX_UPDATE_INTERVAL=300000
+
+# コンテキスト管理設定
+MAX_CONTEXT_SIZE=200000
+WARNING_THRESHOLD=150000
+CRITICAL_THRESHOLD=180000
+AUTO_COMPRESSION_THRESHOLD=150000
+COMPRESSION_RATIO=0.7
+MAX_HISTORY_ENTRIES=100
+
+# ログ設定
+LOG_LEVEL=info
+LOG_ENABLED=true
+
+# 分析設定
+ANALYTICS_ENABLED=true
+METRICS_COLLECTION_INTERVAL=5000
+METRICS_RETENTION_DAYS=30
+DASHBOARD_UPDATE_INTERVAL=10000

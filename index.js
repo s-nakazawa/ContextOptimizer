@@ -69,6 +69,19 @@ For MCP server usage, run without arguments and connect via Cursor.`);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// プロジェクトルートの自動検出
+function detectProjectRoot() {
+  // 環境変数からプロジェクトルートを取得
+  if (process.env.PROJECT_ROOT) {
+    return process.env.PROJECT_ROOT;
+  }
+  
+  // 現在の作業ディレクトリをプロジェクトルートとして使用
+  return process.cwd();
+}
+
+const PROJECT_ROOT = detectProjectRoot();
+
 let config = {
   server: {
     name: 'context-optimizer-server',
@@ -894,8 +907,14 @@ async function handleGetContextPack(request) {
     const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
     const maxResults = config.tools?.maxResults || 10;
     
-    const files = await glob('**/*', { 
-      ignore: excludePatterns 
+    // プロジェクトルートを基準にファイル検索
+    const searchPattern = config.project?.root ? 
+      `${config.project.root}/**/*` : 
+      '**/*';
+    
+    const files = await glob(searchPattern, { 
+      ignore: excludePatterns,
+      cwd: config.project?.root || process.cwd()
     });
     
     return {
@@ -1104,8 +1123,14 @@ async function handleSearchFiles(request) {
     // 設定ファイルから除外パターンを取得
     const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
     
-    const files = await glob(pattern, { 
-      ignore: excludePatterns 
+    // プロジェクトルートを基準にファイル検索
+    const searchPattern = config.project?.root ? 
+      `${config.project.root}/${pattern}` : 
+      pattern;
+    
+    const files = await glob(searchPattern, { 
+      ignore: excludePatterns,
+      cwd: config.project?.root || process.cwd()
     });
     
     return {
@@ -1508,8 +1533,14 @@ async function handleHybridSearch(request) {
     const patterns = config.fileSearch?.patterns || ['**/*.{ts,js,tsx,jsx,md,txt}'];
     const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
     
-    const files = await glob(patterns, { 
-      ignore: excludePatterns 
+    // プロジェクトルートを基準にファイル検索
+    const searchPatterns = config.project?.root ? 
+      patterns.map(pattern => `${config.project.root}/${pattern}`) : 
+      patterns;
+    
+    const files = await glob(searchPatterns, { 
+      ignore: excludePatterns,
+      cwd: config.project?.root || process.cwd()
     });
     
     const results = [];
