@@ -136,15 +136,9 @@ const __dirname = dirname(__filename);
 
 // プロジェクトルートの自動検出
 function detectProjectRoot() {
-  // 環境変数からプロジェクトルートを取得
-  if (process.env.PROJECT_ROOT) {
-    console.error(chalk.blue('🎯 PROJECT_ROOT from env:'), process.env.PROJECT_ROOT);
-    return process.env.PROJECT_ROOT;
-  }
-  
-  // 現在の作業ディレクトリをプロジェクトルートとして使用
+  // 現在の作業ディレクトリをプロジェクトルートとして使用（設定ファイルで上書きされる）
   const cwd = process.cwd();
-  console.error(chalk.yellow('⚠️  Using current working directory:'), cwd);
+  console.error(chalk.yellow('⚠️  Initial PROJECT_ROOT (will be overridden by config):'), cwd);
   return cwd;
 }
 
@@ -290,8 +284,13 @@ function loadConfigFile() {
       
       // プロジェクトルートを再設定
       if (config.project && config.project.root) {
+        const oldRoot = PROJECT_ROOT;
         PROJECT_ROOT = config.project.root;
-        console.error(chalk.blue('🎯 PROJECT_ROOT from project config:'), PROJECT_ROOT);
+        console.error(chalk.green('✅ PROJECT_ROOT updated from project config:'));
+        console.error(chalk.gray('  Old:'), oldRoot);
+        console.error(chalk.green('  New:'), PROJECT_ROOT);
+      } else {
+        console.error(chalk.yellow('⚠️  No project.root found in project config, keeping:'), PROJECT_ROOT);
       }
       return true;
     } catch (error) {
@@ -309,8 +308,13 @@ function loadConfigFile() {
       
       // 設定ファイル読み込み後にプロジェクトルートを再設定
       if (config.project && config.project.root) {
+        const oldRoot = PROJECT_ROOT;
         PROJECT_ROOT = config.project.root;
-        console.error(chalk.blue('🎯 PROJECT_ROOT from default config:'), PROJECT_ROOT);
+        console.error(chalk.green('✅ PROJECT_ROOT updated from default config:'));
+        console.error(chalk.gray('  Old:'), oldRoot);
+        console.error(chalk.green('  New:'), PROJECT_ROOT);
+      } else {
+        console.error(chalk.yellow('⚠️  No project.root found in default config, keeping:'), PROJECT_ROOT);
       }
       return true;
     } catch (error) {
@@ -323,6 +327,9 @@ function loadConfigFile() {
 }
 
 loadConfigFile();
+
+// 最終的なPROJECT_ROOTを表示
+console.error(chalk.cyan('🎯 Final PROJECT_ROOT:'), PROJECT_ROOT);
 
 // パフォーマンス最適化機能の初期化
 let performanceCache = null;
