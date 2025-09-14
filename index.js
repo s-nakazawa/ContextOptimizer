@@ -282,8 +282,13 @@ function loadConfigFile() {
   if (existsSync(projectConfigPath)) {
     try {
       const configData = readFileSync(projectConfigPath, 'utf8');
-      config = { ...config, ...JSON.parse(configData) };
-      console.error(chalk.green('✅ プロジェクト設定ファイル読み込み成功 / Project config file loaded successfully:'), projectConfigPath);
+      const projectConfig = JSON.parse(configData);
+      config = { ...config, ...projectConfig };
+      
+      console.error(chalk.green('✅ プロジェクト設定ファイル読み込み成功 / Project config file loaded successfully:'));
+      console.error(chalk.cyan('📁 ファイル名 / File name:'), projectConfigPath);
+      console.error(chalk.blue('📋 設定内容 / Configuration content:'));
+      console.error(chalk.gray(JSON.stringify(projectConfig, null, 2)));
       
       // プロジェクトルートを再設定
       if (config.project && config.project.root) {
@@ -308,8 +313,13 @@ function loadConfigFile() {
   if (existsSync(configPath)) {
     try {
       const configData = readFileSync(configPath, 'utf8');
-      config = { ...config, ...JSON.parse(configData) };
+      const defaultConfig = JSON.parse(configData);
+      config = { ...config, ...defaultConfig };
+      
       console.error(chalk.green('✅ デフォルト設定ファイル読み込み成功 / Default config file loaded successfully'));
+      console.error(chalk.cyan('📁 ファイル名 / File name:'), configPath);
+      console.error(chalk.blue('📋 設定内容 / Configuration content:'));
+      console.error(chalk.gray(JSON.stringify(defaultConfig, null, 2)));
       
       // 設定ファイル読み込み後にプロジェクトルートを再設定
       if (config.project && config.project.root) {
@@ -335,6 +345,10 @@ loadConfigFile();
 
 // 最終的なPROJECT_ROOTを表示
 console.error(chalk.cyan('🎯 Final PROJECT_ROOT:'), PROJECT_ROOT);
+
+// 最終的な統合された設定を表示
+console.error(chalk.magenta('🔧 Final integrated configuration:'));
+console.error(chalk.gray(JSON.stringify(config, null, 2)));
 
 // パフォーマンス最適化機能の初期化
 let performanceCache = null;
