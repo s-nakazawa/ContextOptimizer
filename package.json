@@ -1,11 +1,11 @@
 {
-  "name": "context-optimizer-mcp-server",
+  "name": "context-optimizer",
   "version": "1.2.1",
   "description": "Context Optimizer MCP Server - Advanced MCP Server for Cursor Development with File Search, Content Reading, AST Parsing, Git Diff Analysis, Performance Optimization and Hybrid Search",
   "type": "module",
   "main": "index.js",
   "bin": {
-    "context-optimizer-mcp-server": "index.js"
+    "context-optimizer": "index.js"
   },
   "files": [
     "index.js",
