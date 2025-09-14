@@ -274,8 +274,11 @@ let config = {
 
 // 設定ファイルの読み込み
 function loadConfigFile() {
-  // 1. プロジェクトルートの .context-optimizer.config を優先
-  const projectConfigPath = join(PROJECT_ROOT, '.context-optimizer.config');
+  // 1. 現在の作業ディレクトリの .context-optimizer.config を優先
+  const currentDir = process.cwd();
+  const projectConfigPath = join(currentDir, '.context-optimizer.config');
+  console.error(chalk.blue('🔍 Looking for config file at:'), projectConfigPath);
+  
   if (existsSync(projectConfigPath)) {
     try {
       const configData = readFileSync(projectConfigPath, 'utf8');
@@ -296,6 +299,8 @@ function loadConfigFile() {
     } catch (error) {
       console.error(chalk.red('❌ プロジェクト設定ファイル読み込みエラー / Project config file loading error:'), error.message);
     }
+  } else {
+    console.error(chalk.yellow('⚠️  Project config file not found at:'), projectConfigPath);
   }
   
   // 2. フォールバック: 従来の config.json
