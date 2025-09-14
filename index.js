@@ -15,6 +15,56 @@ import simpleGit from 'simple-git';
 import NodeCache from 'node-cache';
 import natural from 'natural';
 
+// コマンドライン引数の処理（設定ファイル読み込み前に実行）
+const args = process.argv.slice(2);
+if (args.includes('--version') || args.includes('-v')) {
+  // 設定ファイルを読み込んでバージョンを取得
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  const configPath = join(__dirname, 'config.json');
+  
+  let version = '1.1.8'; // デフォルトバージョン
+  if (existsSync(configPath)) {
+    try {
+      const configData = JSON.parse(readFileSync(configPath, 'utf8'));
+      version = configData.server?.version || version;
+    } catch (error) {
+      // 設定ファイル読み込みエラーは無視してデフォルトバージョンを使用
+    }
+  }
+  
+  console.log(version);
+  process.exit(0);
+}
+
+if (args.includes('--help') || args.includes('-h')) {
+  // 設定ファイルを読み込んでバージョンを取得
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  const configPath = join(__dirname, 'config.json');
+  
+  let version = '1.1.8'; // デフォルトバージョン
+  if (existsSync(configPath)) {
+    try {
+      const configData = JSON.parse(readFileSync(configPath, 'utf8'));
+      version = configData.server?.version || version;
+    } catch (error) {
+      // 設定ファイル読み込みエラーは無視してデフォルトバージョンを使用
+    }
+  }
+  
+  console.log(`Context Optimizer MCP Server v${version}
+  
+Usage: node index.js [options]
+
+Options:
+  --version, -v    Show version number
+  --help, -h       Show this help message
+
+For MCP server usage, run without arguments and connect via Cursor.`);
+  process.exit(0);
+}
+
 // 設定ファイルの読み込み
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -41,7 +91,7 @@ let config = {
   fileContent: {
     enabled: true,
     maxFileSize: 100000,
-    supportedExtensions: ['.ts', '.js', '.tsx', '.jsx', '.py', '.java', '.go', '.rs', '.md', '.txt']
+    excludeExtensions: ['.exe', '.dll', '.so', '.dylib', '.bin', '.img', '.iso', '.zip', '.tar', '.gz', '.rar', '.7z', '.mp4', '.avi', '.mov', '.mp3', '.wav', '.flac', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.otf']
   },
   astParsing: {
     enabled: true,
@@ -331,6 +381,7 @@ if (config.analytics && config.analytics.enabled && config.analytics.metrics && 
 }
 */
 
+
 // MCP専用ログ - ファイルが実行されているかどうかを確認（stderrのみ）
 if (config.logging && config.logging.enabled && config.logging.level === 'debug') {
   console.error(chalk.green('🚀 Context Optimizer MCP Server - index.js 実行開始 / Execution started'));
@@ -402,7 +453,8 @@ async function main() {
                 },
                 serverInfo: {
                   name: config.server.name,
-                  version: config.server.version
+                  version: config.server.version,
+                  description: config.server.description
                 }
               }
             };
@@ -647,6 +699,19 @@ async function main() {
           case 'tools/call':
             console.error(chalk.blue('🔧 ツール呼び出し / Tool call:'), request.params.name, request.params.arguments);
             
+            // ツール機能が無効化されているかチェック
+            if (!config.tools || !config.tools.enabled) {
+              response = {
+                jsonrpc: '2.0',
+                id: request.id,
+                error: {
+                  code: -32601,
+                  message: 'Tools are disabled in configuration'
+                }
+              };
+              break;
+            }
+            
             // ツール起動ログ（stderrに出力してJSONレスポンスを汚染しない）
             const toolStartTime = Date.now();
             console.error(chalk.cyan(`[TOOL] ${request.params.name} started`));
@@ -812,13 +877,24 @@ async function handleGetContextPack(request) {
   console.error(chalk.blue('🔍 get_context_pack 実行中 / Executing get_context_pack:'), request.params.arguments.query);
   
   try {
+    // ファイル検索機能が無効化されているかチェック
+    if (!config.fileSearch || !config.fileSearch.enabled) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32601,
+          message: 'File search is disabled in configuration'
+        }
+      };
+    }
+    
     const query = request.params.arguments.query;
-    // 設定ファイルからパターンと除外パターンを取得
-    const patterns = config.fileSearch?.patterns || ['**/*.{ts,js,tsx,jsx}'];
+    // 設定ファイルから除外パターンを取得（全ファイルを対象にする）
     const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
     const maxResults = config.tools?.maxResults || 10;
     
-    const files = await glob(patterns, { 
+    const files = await glob('**/*', { 
       ignore: excludePatterns 
     });
     
@@ -853,13 +929,24 @@ async function handleExtractFunction(request) {
   console.error(chalk.blue('🔍 extract_function 実行中 / Executing extract_function:'), request.params.arguments.name);
   
   try {
+    // ファイル検索機能が無効化されているかチェック
+    if (!config.fileSearch || !config.fileSearch.enabled) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32601,
+          message: 'File search is disabled in configuration'
+        }
+      };
+    }
+    
     const name = request.params.arguments.name;
-    // 設定ファイルからパターンと除外パターンを取得
-    const patterns = config.fileSearch?.patterns || ['**/*.{ts,js,tsx,jsx}'];
+    // 設定ファイルから除外パターンを取得（全ファイルを対象にする）
     const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
     const maxResults = config.tools?.maxResults || 10;
     
-    const files = await glob(patterns, { 
+    const files = await glob('**/*', { 
       ignore: excludePatterns 
     });
     
@@ -904,13 +991,24 @@ async function handleSearchSymbols(request) {
   console.error(chalk.blue('🔍 search_symbols 実行中 / Executing search_symbols:'), request.params.arguments.query);
   
   try {
+    // ファイル検索機能が無効化されているかチェック
+    if (!config.fileSearch || !config.fileSearch.enabled) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32601,
+          message: 'File search is disabled in configuration'
+        }
+      };
+    }
+    
     const query = request.params.arguments.query;
-    // 設定ファイルからパターンと除外パターンを取得
-    const patterns = config.fileSearch?.patterns || ['**/*.{ts,js,tsx,jsx}'];
+    // 設定ファイルから除外パターンを取得（全ファイルを対象にする）
     const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
     const maxResults = config.tools?.maxResults || 10;
     
-    const files = await glob(patterns, { 
+    const files = await glob('**/*', { 
       ignore: excludePatterns 
     });
     
@@ -988,6 +1086,18 @@ async function handleSearchFiles(request) {
   console.error(chalk.blue('🔍 search_files 実行中 / Executing search_files:'), request.params.arguments.pattern);
   
   try {
+    // ファイル検索機能が無効化されているかチェック
+    if (!config.fileSearch || !config.fileSearch.enabled) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32601,
+          message: 'File search is disabled in configuration'
+        }
+      };
+    }
+    
     const pattern = request.params.arguments.pattern;
     const maxResults = request.params.arguments.maxResults || 20;
     
@@ -1043,6 +1153,36 @@ async function handleReadFileContent(request) {
       };
     }
     
+    // ファイルサイズチェック
+    const stats = statSync(filePath);
+    const maxFileSize = config.fileContent?.maxFileSize || 100000;
+    
+    if (stats.size > maxFileSize) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32602,
+          message: `File too large: ${filePath} (${stats.size} bytes > ${maxFileSize} bytes)`
+        }
+      };
+    }
+    
+    // 拡張子チェック（除外拡張子のみチェック）
+    const fileExt = extname(filePath);
+    const excludeExtensions = config.fileContent?.excludeExtensions || ['.exe', '.dll', '.so', '.dylib', '.bin', '.img', '.iso', '.zip', '.tar', '.gz', '.rar', '.7z', '.mp4', '.avi', '.mov', '.mp3', '.wav', '.flac', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.otf'];
+    
+    if (excludeExtensions.includes(fileExt)) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32602,
+          message: `Excluded file extension: ${fileExt}. Excluded extensions: ${excludeExtensions.join(', ')}`
+        }
+      };
+    }
+    
     const content = readFileSync(filePath, 'utf8');
     const lines = content.split('\n');
     const truncatedContent = lines.slice(0, maxLines).join('\n');
@@ -1073,6 +1213,18 @@ async function handleParseAST(request) {
   console.error(chalk.blue('🔍 parse_ast 実行中 / Executing parse_ast:'), request.params.arguments.filePath);
   
   try {
+    // AST解析機能が無効化されているかチェック
+    if (!config.astParsing || !config.astParsing.enabled) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32601,
+          message: 'AST parsing is disabled in configuration'
+        }
+      };
+    }
+    
     const filePath = request.params.arguments.filePath;
     const includeComments = request.params.arguments.includeComments !== false;
     const includeLocations = request.params.arguments.includeLocations !== false;
@@ -1177,6 +1329,18 @@ async function handleAnalyzeGitDiff(request) {
   console.error(chalk.blue('🔍 analyze_git_diff 実行中 / Executing analyze_git_diff'));
   
   try {
+    // Git差分解析機能が無効化されているかチェック
+    if (!config.gitDiff || !config.gitDiff.enabled) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32601,
+          message: 'Git diff analysis is disabled in configuration'
+        }
+      };
+    }
+    
     const maxCommits = request.params.arguments.maxCommits || 10;
     const includeStats = request.params.arguments.includeStats !== false;
     const format = request.params.arguments.format || 'unified';
@@ -1324,6 +1488,18 @@ async function handleHybridSearch(request) {
   console.error(chalk.blue('🔍 hybrid_search 実行中 / Executing hybrid_search:'), request.params.arguments.query);
   
   try {
+    // ファイル検索機能が無効化されているかチェック
+    if (!config.fileSearch || !config.fileSearch.enabled) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32601,
+          message: 'File search is disabled in configuration'
+        }
+      };
+    }
+    
     const query = request.params.arguments.query;
     const maxResults = request.params.arguments.maxResults || 10;
     const includeContent = request.params.arguments.includeContent !== false;
@@ -1398,6 +1574,18 @@ async function handleMonitorContextSize(request) {
   console.error(chalk.blue('🔍 monitor_context_size 実行中 / Executing monitor_context_size'));
   
   try {
+    // コンテキスト管理機能が無効化されているかチェック
+    if (!config.contextManagement || !config.contextManagement.enabled) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32601,
+          message: 'Context management is disabled in configuration'
+        }
+      };
+    }
+    
     const context = request.params.arguments.context;
     const includeDetails = request.params.arguments.includeDetails !== false;
     
@@ -1470,6 +1658,18 @@ async function handleAutoCompressContext(request) {
   console.error(chalk.blue('🔍 auto_compress_context 実行中 / Executing auto_compress_context'));
   
   try {
+    // コンテキスト管理機能が無効化されているかチェック
+    if (!config.contextManagement || !config.contextManagement.enabled) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32601,
+          message: 'Context management is disabled in configuration'
+        }
+      };
+    }
+    
     const context = request.params.arguments.context;
     const algorithm = request.params.arguments.algorithm || 'summarization';
     const compressionRatio = request.params.arguments.compressionRatio || 0.7;
@@ -1681,6 +1881,18 @@ async function handleSuggestContextOptimization(request) {
   console.error(chalk.blue('🔍 suggest_context_optimization 実行中 / Executing suggest_context_optimization'));
   
   try {
+    // コンテキスト管理機能が無効化されているかチェック
+    if (!config.contextManagement || !config.contextManagement.enabled) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32601,
+          message: 'Context management is disabled in configuration'
+        }
+      };
+    }
+    
     const context = request.params.arguments.context;
     const query = request.params.arguments.query || '';
     const suggestionTypes = request.params.arguments.suggestionTypes || ['duplicate-removal', 'irrelevant-filtering'];
@@ -1798,6 +2010,18 @@ async function handleManageContextHistory(request) {
   console.error(chalk.blue('🔍 manage_context_history 実行中 / Executing manage_context_history'));
   
   try {
+    // コンテキスト管理機能が無効化されているかチェック
+    if (!config.contextManagement || !config.contextManagement.enabled) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32601,
+          message: 'Context management is disabled in configuration'
+        }
+      };
+    }
+    
     const action = request.params.arguments.action;
     const contextId = request.params.arguments.contextId;
     const context = request.params.arguments.context;

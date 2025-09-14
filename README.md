@@ -7,10 +7,10 @@ Advanced Model Context Protocol (MCP) server for Cursor development environments
 ## 🚀 Features / 機能
 
 ### Core Functionality / コア機能
-- **File Search**: Intelligent file discovery with pattern matching
-  **ファイル検索**: パターンマッチングによるインテリジェントなファイル発見
-- **Content Reading**: Efficient file content reading with size limits
-  **コンテンツ読み込み**: サイズ制限付きの効率的なファイルコンテンツ読み込み
+- **File Search**: Intelligent file discovery with blacklist-based filtering
+  **ファイル検索**: ブラックリストベースのフィルタリングによるインテリジェントなファイル発見
+- **Content Reading**: Efficient file content reading with size limits and extension filtering
+  **コンテンツ読み込み**: サイズ制限と拡張子フィルタリング付きの効率的なファイルコンテンツ読み込み
 - **AST Parsing**: JavaScript/TypeScript code analysis
   **AST解析**: JavaScript/TypeScriptコード分析
 - **Git Diff Analysis**: Comprehensive commit history and diff analysis
@@ -19,6 +19,14 @@ Advanced Model Context Protocol (MCP) server for Cursor development environments
   **パフォーマンス最適化**: キャッシュ、並列処理、メモリ管理
 - **Hybrid Search**: BM25 + Vector search for semantic file discovery
   **ハイブリッド検索**: 意味的ファイル発見のためのBM25 + ベクトル検索
+
+### Configuration Management / 設定管理
+- **Blacklist-based Filtering**: Exclude unwanted files instead of maintaining allowlists
+  **ブラックリストベースフィルタリング**: 許可リストを維持する代わりに不要なファイルを除外
+- **Flexible File Patterns**: Support for all file types by default with configurable exclusions
+  **柔軟なファイルパターン**: 設定可能な除外項目でデフォルトですべてのファイルタイプをサポート
+- **Smart Extension Filtering**: Automatically exclude binary files and media files
+  **スマート拡張子フィルタリング**: バイナリファイルとメディアファイルを自動除外
 
 ### Context Management / コンテキスト管理
 - **Context Size Monitoring**: Real-time context usage monitoring
@@ -123,6 +131,18 @@ Cursor: "Show development efficiency"
 Create a `config.json` file in your project root:
 プロジェクトルートに`config.json`ファイルを作成:
 
+### Blacklist-based Configuration / ブラックリストベース設定
+
+The server now uses a **blacklist-based approach** for better flexibility and maintainability:
+サーバーは柔軟性とメンテナンス性を向上させるため、**ブラックリストベースのアプローチ**を使用します:
+
+- **File Search**: All files are included by default, only exclude unwanted directories
+  **ファイル検索**: デフォルトですべてのファイルが含まれ、不要なディレクトリのみを除外
+- **File Content**: All file extensions are supported by default, only exclude binary/media files
+  **ファイルコンテンツ**: デフォルトですべてのファイル拡張子がサポートされ、バイナリ/メディアファイルのみを除外
+- **Automatic Support**: New file types and languages are automatically supported
+  **自動サポート**: 新しいファイルタイプと言語が自動的にサポートされる
+
 ```json
 {
   "server": {
@@ -136,13 +156,12 @@ Create a `config.json` file in your project root:
   },
   "fileSearch": {
     "enabled": true,
-    "patterns": ["**/*.{ts,js,tsx,jsx}", "**/*.py", "**/*.java", "**/*.go", "**/*.rs"],
-    "excludePatterns": ["**/node_modules/**", "**/dist/**", "**/build/**", "**/.git/**"]
+    "excludePatterns": ["**/node_modules/**", "**/dist/**", "**/build/**", "**/.git/**", "**/coverage/**", "**/tmp/**", "**/temp/**", "**/.cache/**", "**/.vscode/**", "**/.idea/**", "**/vendor/**", "**/target/**", "**/out/**", "**/bin/**", "**/obj/**"]
   },
   "fileContent": {
     "enabled": true,
     "maxFileSize": 100000,
-    "supportedExtensions": [".ts", ".js", ".tsx", ".jsx", ".py", ".java", ".go", ".rs", ".md", ".txt"]
+    "excludeExtensions": [".exe", ".dll", ".so", ".dylib", ".bin", ".img", ".iso", ".zip", ".tar", ".gz", ".rar", ".7z", ".mp4", ".avi", ".mov", ".mp3", ".wav", ".flac", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".otf"]
   },
   "astParsing": {
     "enabled": true,

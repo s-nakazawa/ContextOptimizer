@@ -14,13 +14,12 @@
   },
   "fileSearch": {
     "enabled": true,
-    "patterns": ["**/*.{ts,js,tsx,jsx}", "**/*.py", "**/*.java", "**/*.go", "**/*.rs"],
-    "excludePatterns": ["**/node_modules/**", "**/dist/**", "**/build/**", "**/.git/**"]
+    "excludePatterns": ["**/node_modules/**", "**/dist/**", "**/build/**", "**/.git/**", "**/.git/**", "**/coverage/**", "**/tmp/**", "**/temp/**", "**/.cache/**", "**/.vscode/**", "**/.idea/**", "**/vendor/**", "**/target/**", "**/out/**", "**/bin/**", "**/obj/**"]
   },
   "fileContent": {
     "enabled": true,
     "maxFileSize": 100000,
-    "supportedExtensions": [".ts", ".js", ".tsx", ".jsx", ".py", ".java", ".go", ".rs", ".md", ".txt"]
+    "excludeExtensions": [".exe", ".dll", ".so", ".dylib", ".bin", ".img", ".iso", ".zip", ".tar", ".gz", ".rar", ".7z", ".mp4", ".avi", ".mov", ".mp3", ".wav", ".flac", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".otf"]
   },
   "astParsing": {
     "enabled": true,
