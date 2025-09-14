@@ -127,7 +127,7 @@ Create a `config.json` file in your project root:
 {
   "server": {
     "name": "context-optimizer-server",
-    "version": "1.1.4",
+    "version": "1.1.5",
     "description": "Context Optimizer - Advanced MCP Server for Cursor Development with Real-time Context Monitoring, Auto Compression, Optimization Suggestions, and History Management"
   },
   "tools": {
