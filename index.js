@@ -775,11 +775,14 @@ class BM25Search {
 
     return Object.entries(scores)
       .sort(([,a], [,b]) => b - a)
-      .map(([docId, score]) => ({
-        docId: docId,
-        score: score,
-        content: this.index.documents[docId].content
-      }));
+      .map(([docId, score]) => {
+        const doc = this.index.documents[docId];
+        return {
+          docId: docId,
+          score: score,
+          content: doc && doc.content ? doc.content : undefined
+        };
+      });
   }
 
   getAverageDocumentLength() {
@@ -934,10 +937,11 @@ class VectorSearch {
     Object.keys(this.index.vectors).forEach(docId => {
       const similarity = this.cosineSimilarity(queryVector, this.index.vectors[docId]);
       if (similarity >= threshold) {
+        const doc = this.index.documents[docId];
         results.push({
           docId: docId,
           score: similarity,
-          content: this.index.documents[docId]
+          content: doc && doc.content ? doc.content : undefined
         });
       }
     });
@@ -3056,6 +3060,8 @@ async function handleHybridSearch(request) {
     const includeContent = request.params.arguments.includeContent !== false;
     
     console.error(chalk.blue('🔍 Hybrid search query:'), query);
+    console.error(chalk.gray('🔍 Query type:'), typeof query);
+    console.error(chalk.gray('🔍 Query length:'), query ? query.length : 'N/A');
     
     // インデックスが空の場合は自動でインデックスを作成
     const bm25Empty = !bm25Search || Object.keys(bm25Search.index.documents).length === 0;
@@ -3081,11 +3087,31 @@ async function handleHybridSearch(request) {
           return;
         }
         
+        // 詳細なデバッグログ
+        console.error(chalk.gray('🔍 BM25 result details:'), {
+          docId: result.docId,
+          score: result.score,
+          hasContent: !!result.content,
+          contentType: typeof result.content,
+          contentLength: result.content ? result.content.length : 'N/A'
+        });
+        
+        let content = undefined;
+        if (includeContent && result.content) {
+          try {
+            content = result.content.substring(0, 200) + '...';
+          } catch (error) {
+            console.error(chalk.red('❌ BM25 content substring error:'), error.message);
+            console.error(chalk.red('❌ Content value:'), result.content);
+            content = String(result.content).substring(0, 200) + '...';
+          }
+        }
+        
         results.push({
           file: result.docId,
           score: result.score * config.hybridSearch.weights.bm25,
           method: 'BM25',
-          content: includeContent && result.content ? result.content.substring(0, 200) + '...' : undefined
+          content: content
         });
       });
     }
@@ -3102,11 +3128,31 @@ async function handleHybridSearch(request) {
           return;
         }
         
+        // 詳細なデバッグログ
+        console.error(chalk.gray('🔍 Vector result details:'), {
+          docId: result.docId,
+          score: result.score,
+          hasContent: !!result.content,
+          contentType: typeof result.content,
+          contentLength: result.content ? result.content.length : 'N/A'
+        });
+        
+        let content = undefined;
+        if (includeContent && result.content) {
+          try {
+            content = result.content.substring(0, 200) + '...';
+          } catch (error) {
+            console.error(chalk.red('❌ Vector content substring error:'), error.message);
+            console.error(chalk.red('❌ Content value:'), result.content);
+            content = String(result.content).substring(0, 200) + '...';
+          }
+        }
+        
         results.push({
           file: result.docId,
           score: result.score * config.hybridSearch.weights.vector,
           method: 'Vector',
-          content: includeContent && result.content ? result.content.substring(0, 200) + '...' : undefined
+          content: content
         });
       });
     }
