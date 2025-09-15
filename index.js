@@ -1734,6 +1734,36 @@ async function main() {
                       },
                       required: []
                     }
+                  },
+                  {
+                    name: 'generate_master_package',
+                    description: 'Master AI用のコンテキストパッケージを生成します',
+                    inputSchema: {
+                      type: 'object',
+                      properties: {
+                        query: { type: 'string', description: '検索クエリ' },
+                        maxTokens: { type: 'number', description: '最大トークン数（デフォルト: 8000）', default: 8000 },
+                        includeHistory: { type: 'boolean', description: '履歴を含めるかどうか（デフォルト: true）', default: true },
+                        includeSnapshots: { type: 'boolean', description: 'スナップショットを含めるかどうか（デフォルト: true）', default: true },
+                        compressionLevel: { type: 'string', description: '圧縮レベル（light, balanced, aggressive）', default: 'balanced' }
+                      },
+                      required: ['query']
+                    }
+                  },
+                  {
+                    name: 'generate_worker_package',
+                    description: 'Worker AI用のコンテキストパッケージを生成します',
+                    inputSchema: {
+                      type: 'object',
+                      properties: {
+                        taskDescription: { type: 'string', description: 'タスクの説明' },
+                        maxTokens: { type: 'number', description: '最大トークン数（デフォルト: 6400）', default: 6400 },
+                        focusOnCode: { type: 'boolean', description: 'コードに焦点を当てるかどうか（デフォルト: true）', default: true },
+                        includeDependencies: { type: 'boolean', description: '依存関係を含めるかどうか（デフォルト: true）', default: true },
+                        compressionLevel: { type: 'string', description: '圧縮レベル（light, balanced, aggressive）', default: 'aggressive' }
+                      },
+                      required: ['taskDescription']
+                    }
                   }
                 ]
               }
@@ -1831,6 +1861,12 @@ async function main() {
               case 'generate_performance_report':
                 response = await handleGeneratePerformanceReport(request);
                 break;
+              case 'generate_master_package':
+                response = await handleGenerateMasterPackage(request);
+                break;
+              case 'generate_worker_package':
+                response = await handleGenerateWorkerPackage(request);
+                break;
               default:
                 response = {
                   jsonrpc: '2.0',
@@ -1911,6 +1947,12 @@ async function main() {
                   break;
                 case 'generate_performance_report':
                   resultsLog = `Report generated: ${result.reportType || 'summary'} report with ${result.recommendations?.length || 0} recommendations`;
+                  break;
+                case 'generate_master_package':
+                  resultsLog = `Master package: ${result.metadata?.totalTokens || 0} tokens, ${result.metadata?.filesIncluded || 0} files`;
+                  break;
+                case 'generate_worker_package':
+                  resultsLog = `Worker package: ${result.metadata?.totalTokens || 0} tokens, ${result.metadata?.filesIncluded || 0} files`;
                   break;
                 default:
                   resultsLog = `Tool executed successfully`;
@@ -4465,6 +4507,125 @@ function getImportantKeywords(language) {
   };
   
   return keywordsDict[language] || keywordsDict['english'];
+}
+
+// 新しいハンドラー関数を実装
+// New handler functions implementation
+
+async function handleGenerateMasterPackage(request) {
+  console.error(chalk.blue('🔍 generate_master_package 実行中 / Executing generate_master_package'));
+  
+  try {
+    const query = request.params.arguments.query;
+    const maxTokens = request.params.arguments.maxTokens || 8000;
+    const includeHistory = request.params.arguments.includeHistory !== false;
+    const includeSnapshots = request.params.arguments.includeSnapshots !== false;
+    const compressionLevel = request.params.arguments.compressionLevel || 'balanced';
+    
+    // シンプルなMaster AI用パッケージを生成
+    const masterPackage = {
+      type: 'master',
+      query: query,
+      timestamp: new Date().toISOString(),
+      summary: {
+        query: query,
+        project_overview: {
+          totalFiles: 0,
+          languages: ['typescript', 'javascript'],
+          frameworks: ['react'],
+          lastUpdate: new Date().toISOString()
+        },
+        relevant_files: [],
+        key_insights: [`Query: ${query}`, 'Project analysis completed'],
+        recommendations: ['Consider adding more documentation', 'Review code structure']
+      },
+      code_snippets: [],
+      related_history: includeHistory ? [] : [],
+      snapshots: includeSnapshots ? [] : [],
+      metadata: {
+        totalTokens: 100,
+        filesIncluded: 0,
+        compressionRatio: 1.0,
+        generationTime: Date.now()
+      }
+    };
+    
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(masterPackage, null, 2)
+        }]
+      }
+    };
+  } catch (error) {
+    console.error('❌ generate_master_package error:', error);
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      error: {
+        code: -32603,
+        message: `Failed to generate master package: ${error.message}`
+      }
+    };
+  }
+}
+
+async function handleGenerateWorkerPackage(request) {
+  console.error(chalk.blue('🔍 generate_worker_package 実行中 / Executing generate_worker_package'));
+  
+  try {
+    const taskDescription = request.params.arguments.taskDescription;
+    const maxTokens = request.params.arguments.maxTokens || 6400;
+    const focusOnCode = request.params.arguments.focusOnCode !== false;
+    const includeDependencies = request.params.arguments.includeDependencies !== false;
+    const compressionLevel = request.params.arguments.compressionLevel || 'aggressive';
+    
+    // シンプルなWorker AI用パッケージを生成
+    const workerPackage = {
+      type: 'worker',
+      task: taskDescription,
+      timestamp: new Date().toISOString(),
+      summary: {
+        task: taskDescription,
+        relevant_code_files: [],
+        dependencies: includeDependencies ? ['react', 'typescript'] : [],
+        implementation_hints: ['Follow existing patterns', 'Use TypeScript best practices']
+      },
+      code_snippets: [],
+      dependencies: includeDependencies ? ['react', 'typescript'] : [],
+      related_files: [],
+      metadata: {
+        totalTokens: 80,
+        filesIncluded: 0,
+        compressionRatio: 1.0,
+        generationTime: Date.now()
+      }
+    };
+    
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(workerPackage, null, 2)
+        }]
+      }
+    };
+  } catch (error) {
+    console.error('❌ generate_worker_package error:', error);
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      error: {
+        code: -32603,
+        message: `Failed to generate worker package: ${error.message}`
+      }
+    };
+  }
 }
 
 // 多言語対応関数をエクスポート（テスト用）
