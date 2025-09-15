@@ -6,11 +6,14 @@
  */
 
 import chalk from 'chalk';
-import { readFileSync, existsSync, statSync } from 'fs';
+import { readFileSync, existsSync, statSync, mkdirSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
-import { dirname, join, extname } from 'path';
+import { dirname, join, extname, resolve } from 'path';
 import { glob } from 'glob';
 import { Parser } from 'acorn';
+import jsx from 'acorn-jsx';
+import { simple as walk } from 'acorn-walk';
+import { parse } from '@typescript-eslint/parser';
 import simpleGit from 'simple-git';
 import NodeCache from 'node-cache';
 import natural from 'natural';
@@ -512,6 +515,234 @@ loadConfigFile();
 
 // 最終的なPROJECT_ROOTを表示
 console.error(chalk.cyan('🎯 Final PROJECT_ROOT:'), PROJECT_ROOT);
+
+// パス解決ユーティリティ関数
+function resolvePath(relativePath) {
+  if (!relativePath) return PROJECT_ROOT;
+  
+  // 絶対パスの場合はそのまま返す
+  if (relativePath.startsWith('/') || relativePath.match(/^[A-Za-z]:/)) {
+    return relativePath;
+  }
+  
+  // 相対パスの場合はPROJECT_ROOTを基準に解決
+  return resolve(PROJECT_ROOT, relativePath);
+}
+
+// インデックスディレクトリの初期化
+function ensureIndexDirectory(indexPath) {
+  const fullPath = resolvePath(indexPath);
+  if (!existsSync(fullPath)) {
+    mkdirSync(fullPath, { recursive: true });
+    console.error(chalk.green('📁 Created index directory:'), fullPath);
+  }
+  return fullPath;
+}
+
+// BM25検索の実装
+class BM25Search {
+  constructor(indexPath) {
+    this.indexPath = ensureIndexDirectory(indexPath);
+    this.indexFile = join(this.indexPath, 'bm25-index.json');
+    this.index = this.loadIndex();
+  }
+
+  loadIndex() {
+    if (existsSync(this.indexFile)) {
+      try {
+        const data = readFileSync(this.indexFile, 'utf8');
+        return JSON.parse(data);
+      } catch (error) {
+        console.error(chalk.yellow('⚠️ Failed to load BM25 index:'), error.message);
+      }
+    }
+    return {
+      documents: {},
+      termFrequencies: {},
+      documentFrequencies: {},
+      totalDocuments: 0
+    };
+  }
+
+  saveIndex() {
+    try {
+      writeFileSync(this.indexFile, JSON.stringify(this.index, null, 2));
+      console.error(chalk.green('💾 BM25 index saved:'), this.indexFile);
+    } catch (error) {
+      console.error(chalk.red('❌ Failed to save BM25 index:'), error.message);
+    }
+  }
+
+  addDocument(docId, content) {
+    const tokenizer = new natural.WordTokenizer();
+    const tokens = tokenizer.tokenize(content.toLowerCase());
+    const termFreq = {};
+    
+    // 単語頻度を計算
+    tokens.forEach(token => {
+      termFreq[token] = (termFreq[token] || 0) + 1;
+    });
+
+    this.index.documents[docId] = {
+      content: content,
+      tokens: tokens,
+      termFreq: termFreq,
+      length: tokens.length
+    };
+
+    // 文書頻度を更新
+    Object.keys(termFreq).forEach(term => {
+      if (!this.index.documentFrequencies[term]) {
+        this.index.documentFrequencies[term] = 0;
+      }
+      this.index.documentFrequencies[term]++;
+    });
+
+    this.index.totalDocuments++;
+    this.saveIndex();
+  }
+
+  search(query, k1 = 1.2, b = 0.75) {
+    const tokenizer = new natural.WordTokenizer();
+    const queryTokens = tokenizer.tokenize(query.toLowerCase());
+    const scores = {};
+
+    Object.keys(this.index.documents).forEach(docId => {
+      const doc = this.index.documents[docId];
+      let score = 0;
+
+      queryTokens.forEach(term => {
+        if (doc.termFreq[term]) {
+          const tf = doc.termFreq[term];
+          const df = this.index.documentFrequencies[term] || 1;
+          const idf = Math.log((this.index.totalDocuments - df + 0.5) / (df + 0.5));
+          const tfScore = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (doc.length / this.getAverageDocumentLength())));
+          score += idf * tfScore;
+        }
+      });
+
+      if (score > 0) {
+        scores[docId] = score;
+      }
+    });
+
+    return Object.entries(scores)
+      .sort(([,a], [,b]) => b - a)
+      .map(([docId, score]) => ({
+        docId: docId,
+        score: score,
+        content: this.index.documents[docId].content
+      }));
+  }
+
+  getAverageDocumentLength() {
+    const lengths = Object.values(this.index.documents).map(doc => doc.length);
+    return lengths.reduce((sum, len) => sum + len, 0) / lengths.length || 1;
+  }
+}
+
+// ベクトル検索の実装（簡易版）
+class VectorSearch {
+  constructor(indexPath) {
+    this.indexPath = ensureIndexDirectory(indexPath);
+    this.indexFile = join(this.indexPath, 'vector-index.json');
+    this.index = this.loadIndex();
+  }
+
+  loadIndex() {
+    if (existsSync(this.indexFile)) {
+      try {
+        const data = readFileSync(this.indexFile, 'utf8');
+        return JSON.parse(data);
+      } catch (error) {
+        console.error(chalk.yellow('⚠️ Failed to load vector index:'), error.message);
+      }
+    }
+    return {
+      documents: {},
+      vectors: {}
+    };
+  }
+
+  saveIndex() {
+    try {
+      writeFileSync(this.indexFile, JSON.stringify(this.index, null, 2));
+      console.error(chalk.green('💾 Vector index saved:'), this.indexFile);
+    } catch (error) {
+      console.error(chalk.red('❌ Failed to save vector index:'), error.message);
+    }
+  }
+
+  // 簡易的なベクトル化（実際の実装ではより高度な手法を使用）
+  vectorize(text) {
+    const tokenizer = new natural.WordTokenizer();
+    const tokens = tokenizer.tokenize(text.toLowerCase());
+    const vector = {};
+    tokens.forEach(token => {
+      vector[token] = (vector[token] || 0) + 1;
+    });
+    return vector;
+  }
+
+  cosineSimilarity(vec1, vec2) {
+    const keys = new Set([...Object.keys(vec1), ...Object.keys(vec2)]);
+    let dotProduct = 0;
+    let norm1 = 0;
+    let norm2 = 0;
+
+    keys.forEach(key => {
+      const val1 = vec1[key] || 0;
+      const val2 = vec2[key] || 0;
+      dotProduct += val1 * val2;
+      norm1 += val1 * val1;
+      norm2 += val2 * val2;
+    });
+
+    if (norm1 === 0 || norm2 === 0) return 0;
+    return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
+  }
+
+  addDocument(docId, content) {
+    const vector = this.vectorize(content);
+    this.index.documents[docId] = content;
+    this.index.vectors[docId] = vector;
+    this.saveIndex();
+  }
+
+  search(query, threshold = 0.7) {
+    const queryVector = this.vectorize(query);
+    const results = [];
+
+    Object.keys(this.index.vectors).forEach(docId => {
+      const similarity = this.cosineSimilarity(queryVector, this.index.vectors[docId]);
+      if (similarity >= threshold) {
+        results.push({
+          docId: docId,
+          score: similarity,
+          content: this.index.documents[docId]
+        });
+      }
+    });
+
+    return results.sort((a, b) => b.score - a.score);
+  }
+}
+
+// ハイブリッド検索インスタンスの初期化
+let bm25Search = null;
+let vectorSearch = null;
+
+if (config.hybridSearch && config.hybridSearch.enabled) {
+  if (config.hybridSearch.bm25 && config.hybridSearch.bm25.enabled) {
+    bm25Search = new BM25Search(config.hybridSearch.bm25.indexPath);
+    console.error(chalk.green('🔍 BM25 search initialized:'), resolvePath(config.hybridSearch.bm25.indexPath));
+  }
+  
+  if (config.hybridSearch.vector && config.hybridSearch.vector.enabled) {
+    vectorSearch = new VectorSearch(config.hybridSearch.vector.indexPath);
+    console.error(chalk.green('🔍 Vector search initialized:'), resolvePath(config.hybridSearch.vector.indexPath));
+  }
+}
 
 // 最終的な統合された設定を表示
 console.error(chalk.magenta('🔧 Final integrated configuration:'));
@@ -1664,12 +1895,74 @@ async function handleParseAST(request) {
       }
     }
     
-    const ast = Parser.parse(parseContent, {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      locations: includeLocations,
-      ranges: includeLocations
-    });
+    // ファイル拡張子に応じて適切なパーサーを選択
+    let ast;
+    
+    if (ext === '.ts' || ext === '.tsx') {
+      // TypeScriptファイルの解析
+      try {
+        ast = parse(parseContent, {
+          ecmaVersion: 2022,
+          sourceType: 'module',
+          loc: includeLocations,
+          range: includeLocations,
+          parserOptions: {
+            ecmaVersion: 2022,
+            sourceType: 'module',
+            ecmaFeatures: {
+              jsx: ext === '.tsx'
+            }
+          }
+        });
+      } catch (tsError) {
+        // TypeScript解析に失敗した場合はJavaScriptとして解析
+        console.error(chalk.yellow('⚠️ TypeScript解析に失敗、JavaScriptとして解析:'), tsError.message);
+        try {
+          const parser = Parser.extend(jsx());
+          ast = parser.parse(parseContent, {
+            ecmaVersion: 2022,
+            sourceType: 'module',
+            locations: includeLocations,
+            ranges: includeLocations,
+            allowHashBang: true,
+            allowImportExportEverywhere: true,
+            allowAwaitOutsideFunction: true,
+            allowReturnOutsideFunction: true,
+            allowSuperOutsideMethod: true,
+            allowUndeclaredExports: true,
+            plugins: {
+              jsx: ext === '.tsx'
+            }
+          });
+        } catch (jsError) {
+          console.error(chalk.red('❌ JavaScript解析も失敗:'), jsError.message);
+          throw new Error(`Both TypeScript and JavaScript parsing failed: ${jsError.message}`);
+        }
+      }
+    } else {
+      // JavaScript/JSXファイルの解析
+      try {
+        const parser = Parser.extend(jsx());
+        ast = parser.parse(parseContent, {
+          ecmaVersion: 2022,
+          sourceType: 'module',
+          locations: includeLocations,
+          ranges: includeLocations,
+          allowHashBang: true,
+          allowImportExportEverywhere: true,
+          allowAwaitOutsideFunction: true,
+          allowReturnOutsideFunction: true,
+          allowSuperOutsideMethod: true,
+          allowUndeclaredExports: true,
+          plugins: {
+            jsx: ext === '.jsx'
+          }
+        });
+      } catch (jsError) {
+        console.error(chalk.red('❌ JavaScript解析に失敗:'), jsError.message);
+        throw new Error(`JavaScript parsing failed: ${jsError.message}`);
+      }
+    }
     
     const astStats = {
       functions: 0,
@@ -1680,40 +1973,105 @@ async function handleParseAST(request) {
     };
     
     function analyzeNode(node) {
-      if (node.type === 'FunctionDeclaration') astStats.functions++;
-      if (node.type === 'VariableDeclaration') astStats.variables++;
-      if (node.type === 'ClassDeclaration') astStats.classes++;
-      if (node.type === 'ImportDeclaration') astStats.imports++;
-      if (node.type === 'ExportNamedDeclaration' || node.type === 'ExportDefaultDeclaration') astStats.exports++;
+      // null チェックを追加
+      if (!node || typeof node !== 'object') {
+        return;
+      }
       
+      // 関数の解析
+      if (node.type === 'FunctionDeclaration') astStats.functions++;
+      if (node.type === 'FunctionExpression') astStats.functions++;
+      if (node.type === 'ArrowFunctionExpression') astStats.functions++;
+      
+      // 変数の解析
+      if (node.type === 'VariableDeclaration') astStats.variables++;
+      if (node.type === 'VariableDeclarator') astStats.variables++;
+      
+      // クラスの解析
+      if (node.type === 'ClassDeclaration') astStats.classes++;
+      if (node.type === 'ClassExpression') astStats.classes++;
+      
+      // インポート/エクスポートの解析
+      if (node.type === 'ImportDeclaration') astStats.imports++;
+      if (node.type === 'ExportNamedDeclaration') astStats.exports++;
+      if (node.type === 'ExportDefaultDeclaration') astStats.exports++;
+      if (node.type === 'ExportAllDeclaration') astStats.exports++;
+      
+      // TypeScriptの解析
+      if (node.type === 'TSInterfaceDeclaration') astStats.classes++;
+      if (node.type === 'TSTypeAliasDeclaration') astStats.variables++;
+      if (node.type === 'TSEnumDeclaration') astStats.classes++;
+      if (node.type === 'TSModuleDeclaration') astStats.classes++;
+      
+      // JSXの解析
+      if (node.type === 'JSXElement') astStats.functions++;
+      if (node.type === 'JSXFragment') astStats.functions++;
+      
+      // 子ノードの再帰的解析（安全な方法で）
       for (const key in node) {
-        if (node[key] && typeof node[key] === 'object') {
-          if (Array.isArray(node[key])) {
-            node[key].forEach(analyzeNode);
-          } else if (node[key].type) {
-            analyzeNode(node[key]);
+        try {
+          const value = node[key];
+          if (value && typeof value === 'object') {
+            if (Array.isArray(value)) {
+              value.forEach(childNode => {
+                if (childNode && typeof childNode === 'object') {
+                  analyzeNode(childNode);
+                }
+              });
+            } else if (value.type) {
+              analyzeNode(value);
+            }
           }
+        } catch (error) {
+          // 個別のノード解析エラーは無視して続行
+          console.error(chalk.yellow('⚠️ Node analysis warning:'), error.message);
         }
       }
     }
     
-    analyzeNode(ast);
-    
-    return {
-      jsonrpc: '2.0',
-      id: request.id,
-      result: {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            filePath: filePath,
-            ast: includeLocations ? ast : 'AST structure available',
-            statistics: astStats,
-            timestamp: new Date().toISOString()
-          }, null, 2)
-        }]
+    try {
+      // ASTが有効かチェック
+      if (!ast || typeof ast !== 'object') {
+        throw new Error('Invalid AST structure');
       }
-    };
+      
+      analyzeNode(ast);
+      
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        result: {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              filePath: filePath,
+              ast: includeLocations ? ast : 'AST structure available',
+              statistics: astStats,
+              timestamp: new Date().toISOString()
+            }, null, 2)
+          }]
+        }
+      };
+    } catch (parseError) {
+      console.error(chalk.red('❌ AST解析エラー / AST parsing error:'), parseError.message);
+      
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        result: {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              filePath: filePath,
+              error: parseError.message,
+              errorType: parseError.name,
+              statistics: astStats,
+              timestamp: new Date().toISOString()
+            }, null, 2)
+          }]
+        }
+      };
+    }
   } catch (error) {
     return {
       jsonrpc: '2.0',
@@ -1891,14 +2249,14 @@ async function handleHybridSearch(request) {
   console.error(chalk.blue('🔍 hybrid_search 実行中 / Executing hybrid_search:'), request.params.arguments.query);
   
   try {
-    // ファイル検索機能が無効化されているかチェック
-    if (!config.fileSearch || !config.fileSearch.enabled) {
+    // ハイブリッド検索機能が無効化されているかチェック
+    if (!config.hybridSearch || !config.hybridSearch.enabled) {
       return {
         jsonrpc: '2.0',
         id: request.id,
         error: {
           code: -32601,
-          message: 'File search is disabled in configuration'
+          message: 'Hybrid search is disabled in configuration'
         }
       };
     }
@@ -1907,47 +2265,89 @@ async function handleHybridSearch(request) {
     const maxResults = request.params.arguments.maxResults || 10;
     const includeContent = request.params.arguments.includeContent !== false;
     
-    // 設定ファイルからパターンと除外パターンを取得
+    console.error(chalk.blue('🔍 Hybrid search query:'), query);
+    
+    // ファイルをインデックスに追加（初回実行時）
     const patterns = config.fileSearch?.patterns || ['**/*.{ts,js,tsx,jsx,md,txt}'];
     const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
-    
-    // プロジェクトルートを基準にファイル検索
-    console.error(chalk.blue('🔍 Hybrid search patterns:'), patterns, 'in:', PROJECT_ROOT);
     
     const files = await glob(patterns, { 
       ignore: excludePatterns,
       cwd: PROJECT_ROOT
     });
     
-    console.error(chalk.green('📁 Found files for hybrid search:'), files.length);
+    console.error(chalk.green('📁 Found files for indexing:'), files.length);
     
-    const results = [];
-    for (const file of files.slice(0, maxResults)) {
+    // ファイルをインデックスに追加
+    for (const file of files.slice(0, 50)) { // 最初の50ファイルのみインデックス
       try {
         const content = readFileSync(file, 'utf8');
-        const tokens = natural.WordTokenizer().tokenize(content.toLowerCase());
-        const queryTokens = natural.WordTokenizer().tokenize(query.toLowerCase());
+        const docId = file.replace(PROJECT_ROOT, '').replace(/^\//, '');
         
-        let score = 0;
-        for (const token of queryTokens) {
-          if (tokens.includes(token)) {
-            score += 1;
-          }
+        if (bm25Search) {
+          bm25Search.addDocument(docId, content);
         }
-        
-        if (score > 0) {
-          results.push({
-            file: file,
-            score: score,
-            content: includeContent ? content.substring(0, 200) + '...' : undefined
-          });
+        if (vectorSearch) {
+          vectorSearch.addDocument(docId, content);
         }
       } catch (e) {
         // ファイル読み込みエラーは無視
       }
     }
     
-    results.sort((a, b) => b.score - a.score);
+    // ハイブリッド検索の実行
+    const results = [];
+    
+    // BM25検索
+    if (bm25Search && config.hybridSearch.bm25.enabled) {
+      const bm25Results = bm25Search.search(query, config.hybridSearch.bm25.k1, config.hybridSearch.bm25.b);
+      console.error(chalk.green('🔍 BM25 results:'), bm25Results.length);
+      
+      bm25Results.forEach(result => {
+        results.push({
+          file: result.docId,
+          score: result.score * config.hybridSearch.weights.bm25,
+          method: 'BM25',
+          content: includeContent ? result.content.substring(0, 200) + '...' : undefined
+        });
+      });
+    }
+    
+    // ベクトル検索
+    if (vectorSearch && config.hybridSearch.vector.enabled) {
+      const vectorResults = vectorSearch.search(query, config.hybridSearch.vector.similarityThreshold);
+      console.error(chalk.green('🔍 Vector results:'), vectorResults.length);
+      
+      vectorResults.forEach(result => {
+        results.push({
+          file: result.docId,
+          score: result.score * config.hybridSearch.weights.vector,
+          method: 'Vector',
+          content: includeContent ? result.content.substring(0, 200) + '...' : undefined
+        });
+      });
+    }
+    
+    // 結果を統合してスコアでソート
+    const combinedResults = {};
+    results.forEach(result => {
+      if (!combinedResults[result.file]) {
+        combinedResults[result.file] = {
+          file: result.file,
+          score: 0,
+          methods: [],
+          content: result.content
+        };
+      }
+      combinedResults[result.file].score += result.score;
+      combinedResults[result.file].methods.push(result.method);
+    });
+    
+    const finalResults = Object.values(combinedResults)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, maxResults);
+    
+    console.error(chalk.green('📊 Final hybrid search results:'), finalResults.length);
     
     return {
       jsonrpc: '2.0',
@@ -1957,10 +2357,12 @@ async function handleHybridSearch(request) {
           type: 'text',
           text: JSON.stringify({
             query: query,
-            results: results.slice(0, maxResults),
-            totalResults: results.length,
+            results: finalResults,
+            totalResults: finalResults.length,
             bm25Enabled: config.hybridSearch.bm25.enabled,
             vectorEnabled: config.hybridSearch.vector.enabled,
+            bm25Weight: config.hybridSearch.weights.bm25,
+            vectorWeight: config.hybridSearch.weights.vector,
             timestamp: new Date().toISOString()
           }, null, 2)
         }]
