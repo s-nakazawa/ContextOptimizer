@@ -976,6 +976,12 @@ async function createInitialIndex() {
     
     for (const file of files.slice(0, maxFiles)) {
       try {
+        // ファイルパスの安全性チェック
+        if (!file || typeof file !== 'string') {
+          console.error(chalk.yellow('⚠️ Invalid file path:'), file);
+          continue;
+        }
+        
         const content = readFileSync(file, 'utf8');
         // 絶対パスから相対パスを作成
         const docId = file.startsWith(PROJECT_ROOT) 
@@ -1041,6 +1047,12 @@ async function updateIndex() {
     
     for (const file of files.slice(0, actualMaxFiles)) {
       try {
+        // ファイルパスの安全性チェック
+        if (!file || typeof file !== 'string') {
+          console.error(chalk.yellow('⚠️ Invalid file path:'), file);
+          continue;
+        }
+        
         const content = readFileSync(file, 'utf8');
         // 絶対パスから相対パスを作成
         const docId = file.startsWith(PROJECT_ROOT) 
@@ -2430,8 +2442,12 @@ async function handleParseAST(request) {
           ecmaVersion: 2022,
           sourceType: 'module',
           ecmaFeatures: {
-            jsx: ext === '.tsx'
-          }
+            jsx: ext === '.tsx',
+            globalReturn: true,
+            impliedStrict: false
+          },
+          project: undefined, // プロジェクト設定を無効化
+          createDefaultProgram: true // デフォルトプログラムを作成
         },
         plugins: [
           'typescript',
@@ -2441,6 +2457,8 @@ async function handleParseAST(request) {
       } catch (tsError) {
         // TypeScript解析に失敗した場合はJavaScriptとして解析
         console.error(chalk.yellow('⚠️ TypeScript解析に失敗、JavaScriptとして解析:'), tsError.message);
+        console.error(chalk.gray('📁 ファイル:'), filePath);
+        console.error(chalk.gray('🔍 エラー詳細:'), tsError);
         try {
           const parser = Parser.extend(jsx());
           ast = parser.parse(parseContent, {
@@ -2834,6 +2852,12 @@ async function handleCreateIndex(request) {
     
     for (const file of files.slice(0, actualMaxFiles)) {
       try {
+        // ファイルパスの安全性チェック
+        if (!file || typeof file !== 'string') {
+          console.error(chalk.yellow('⚠️ Invalid file path:'), file);
+          continue;
+        }
+        
         const content = readFileSync(file, 'utf8');
         // 絶対パスから相対パスを作成
         const docId = file.startsWith(PROJECT_ROOT) 
