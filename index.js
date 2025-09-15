@@ -2142,27 +2142,50 @@ async function handleExtractFunction(request) {
     
     console.error(chalk.blue('🔍 Extract function search in:'), PROJECT_ROOT);
     
-    const files = await glob('**/*', { 
+    // JavaScript/TypeScriptファイルのみを対象にする
+    const files = await glob('**/*.{js,ts,jsx,tsx}', { 
       ignore: excludePatterns,
       cwd: PROJECT_ROOT,
       absolute: true  // 絶対パスで返すように設定
     });
     
-    console.error(chalk.green('📁 Found files:'), files.length);
+    console.error(chalk.green('📁 Found JS/TS files:'), files.length);
     
     let found = false;
     let content = '';
+    let functionDetails = [];
     
     for (const file of files.slice(0, maxResults)) {
       try {
         const fileContent = readFileSync(file, 'utf8');
-        if (fileContent.includes(name)) {
-          content += `\n--- ${file} ---\n${fileContent}\n`;
-          found = true;
+        const ext = extname(file);
+        
+        // AST解析で関数を検索
+        if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
+          const astResult = await extractFunctionFromAST(fileContent, name, file);
+          if (astResult.found) {
+            content += `\n--- ${file} ---\n${astResult.content}\n`;
+            functionDetails.push(...astResult.details);
+            found = true;
+          }
         }
       } catch (e) {
+        console.error(chalk.yellow('⚠️ File processing error:'), e.message);
         // ファイル読み込みエラーは無視
       }
+    }
+    
+    // 結果の整理
+    let resultText = '';
+    if (found) {
+      resultText = `Found ${functionDetails.length} function(s)/class(es) matching "${name}":\n\n`;
+      functionDetails.forEach((detail, index) => {
+        resultText += `${index + 1}. ${detail.type}: ${detail.name} (${detail.file}:${detail.line})\n`;
+        resultText += `   ${detail.signature}\n\n`;
+      });
+      resultText += '\n--- Full File Content ---\n' + content;
+    } else {
+      resultText = `Function/Class "${name}" not found in any JavaScript/TypeScript files`;
     }
     
     return {
@@ -2171,7 +2194,7 @@ async function handleExtractFunction(request) {
       result: {
         content: [{
           type: 'text',
-          text: found ? content : `Function/Class "${name}" not found`
+          text: resultText
         }]
       }
     };
@@ -2184,6 +2207,143 @@ async function handleExtractFunction(request) {
         message: `Internal error: ${error.message}`
       }
     };
+  }
+}
+
+// AST解析で関数を抽出するヘルパー関数
+async function extractFunctionFromAST(content, targetName, filePath) {
+  try {
+    const parser = Parser.extend(jsx());
+    const ast = parser.parse(content, {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      allowHashBang: true,
+      allowImportExportEverywhere: true,
+      allowAwaitOutsideFunction: true,
+      allowReturnOutsideFunction: true,
+      allowSuperOutsideMethod: true,
+      allowUndeclaredExports: true
+    });
+    
+    const found = [];
+    const details = [];
+    
+    walk(ast, {
+      FunctionDeclaration: (node) => {
+        if (node.id && node.id.name === targetName) {
+          const startLine = node.loc?.start.line || 0;
+          const endLine = node.loc?.end.line || 0;
+          const functionCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
+          
+          found.push({
+            type: 'function',
+            name: node.id.name,
+            line: startLine,
+            code: functionCode,
+            signature: `function ${node.id.name}(${node.params.map(p => p.name || '...').join(', ')})`
+          });
+          
+          details.push({
+            type: 'Function Declaration',
+            name: node.id.name,
+            file: filePath,
+            line: startLine,
+            signature: `function ${node.id.name}(${node.params.map(p => p.name || '...').join(', ')})`
+          });
+        }
+      },
+      
+      VariableDeclarator: (node) => {
+        if (node.id && node.id.name === targetName) {
+          const startLine = node.loc?.start.line || 0;
+          const endLine = node.loc?.end.line || 0;
+          const functionCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
+          
+          let signature = '';
+          if (node.init && node.init.type === 'ArrowFunctionExpression') {
+            signature = `const ${node.id.name} = (${node.init.params.map(p => p.name || '...').join(', ')}) => ...`;
+          } else if (node.init && node.init.type === 'FunctionExpression') {
+            signature = `const ${node.id.name} = function(${node.init.params.map(p => p.name || '...').join(', ')}) ...`;
+          } else {
+            signature = `const ${node.id.name} = ...`;
+          }
+          
+          found.push({
+            type: 'variable',
+            name: node.id.name,
+            line: startLine,
+            code: functionCode,
+            signature: signature
+          });
+          
+          details.push({
+            type: 'Variable Declaration',
+            name: node.id.name,
+            file: filePath,
+            line: startLine,
+            signature: signature
+          });
+        }
+      },
+      
+      ClassDeclaration: (node) => {
+        if (node.id && node.id.name === targetName) {
+          const startLine = node.loc?.start.line || 0;
+          const endLine = node.loc?.end.line || 0;
+          const classCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
+          
+          found.push({
+            type: 'class',
+            name: node.id.name,
+            line: startLine,
+            code: classCode,
+            signature: `class ${node.id.name}`
+          });
+          
+          details.push({
+            type: 'Class Declaration',
+            name: node.id.name,
+            file: filePath,
+            line: startLine,
+            signature: `class ${node.id.name}`
+          });
+        }
+      },
+      
+      MethodDefinition: (node) => {
+        if (node.key && node.key.name === targetName) {
+          const startLine = node.loc?.start.line || 0;
+          const endLine = node.loc?.end.line || 0;
+          const methodCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
+          
+          found.push({
+            type: 'method',
+            name: node.key.name,
+            line: startLine,
+            code: methodCode,
+            signature: `${node.kind} ${node.key.name}(${node.value.params.map(p => p.name || '...').join(', ')})`
+          });
+          
+          details.push({
+            type: 'Method Definition',
+            name: node.key.name,
+            file: filePath,
+            line: startLine,
+            signature: `${node.kind} ${node.key.name}(${node.value.params.map(p => p.name || '...').join(', ')})`
+          });
+        }
+      }
+    });
+    
+    return {
+      found: found.length > 0,
+      content: found.map(f => f.code).join('\n\n'),
+      details: details
+    };
+    
+  } catch (error) {
+    console.error(chalk.yellow('⚠️ AST parsing error:'), error.message);
+    return { found: false, content: '', details: [] };
   }
 }
 
@@ -2310,6 +2470,26 @@ async function handleSearchFiles(request) {
     // 設定ファイルから除外パターンを取得
     const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
     
+    // デバッグ情報を追加
+    console.error(chalk.blue('🔍 Debug info:'));
+    console.error(chalk.gray('  Pattern:'), pattern);
+    console.error(chalk.gray('  PROJECT_ROOT:'), PROJECT_ROOT);
+    console.error(chalk.gray('  Exclude patterns:'), excludePatterns);
+    console.error(chalk.gray('  Current working directory:'), process.cwd());
+    
+    // PROJECT_ROOTが存在するかチェック
+    if (!existsSync(PROJECT_ROOT)) {
+      console.error(chalk.red('❌ PROJECT_ROOT does not exist:'), PROJECT_ROOT);
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32602,
+          message: `Project root does not exist: ${PROJECT_ROOT}`
+        }
+      };
+    }
+    
     // プロジェクトルートを基準にファイル検索
     console.error(chalk.blue('🔍 Searching pattern:'), pattern, 'in:', PROJECT_ROOT);
     
@@ -2321,6 +2501,37 @@ async function handleSearchFiles(request) {
     
     console.error(chalk.green('📁 Found files:'), files.length);
     
+    // デバッグ用：最初の数ファイルを表示
+    if (files.length > 0) {
+      console.error(chalk.gray('📂 Sample files found:'));
+      files.slice(0, 5).forEach((file, index) => {
+        console.error(chalk.gray(`  ${index + 1}. ${file}`));
+      });
+    } else {
+      console.error(chalk.yellow('⚠️ No files found with pattern:'), pattern);
+      
+      // パターンが正しくない可能性があるので、より広いパターンでテスト
+      const testPatterns = [
+        '**/*',
+        '**/*.{js,ts,jsx,tsx}',
+        '**/*.{js,ts}',
+        '**/*.js',
+        '**/*.ts'
+      ];
+      
+      for (const testPattern of testPatterns) {
+        const testFiles = await glob(testPattern, { 
+          ignore: excludePatterns,
+          cwd: PROJECT_ROOT,
+          absolute: true
+        });
+        console.error(chalk.gray(`  Test pattern "${testPattern}": ${testFiles.length} files`));
+        if (testFiles.length > 0) {
+          console.error(chalk.gray(`    Sample: ${testFiles[0]}`));
+        }
+      }
+    }
+    
     return {
       jsonrpc: '2.0',
       id: request.id,
@@ -2331,12 +2542,15 @@ async function handleSearchFiles(request) {
             pattern: pattern,
             files: files.slice(0, maxResults),
             totalFiles: files.length,
+            projectRoot: PROJECT_ROOT,
+            excludePatterns: excludePatterns,
             timestamp: new Date().toISOString()
           }, null, 2)
         }]
       }
     };
   } catch (error) {
+    console.error(chalk.red('❌ search_files error:'), error);
     return {
       jsonrpc: '2.0',
       id: request.id,
