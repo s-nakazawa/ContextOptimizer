@@ -3,8 +3,8 @@
 # Context Optimizer専用の環境変数設定ファイル
 
 # プロジェクト設定
-PROJECT_NAME=MeowTrack
-PROJECT_ROOT=/Users/charu/Library/CloudStorage/Dropbox/mac_setting/work/private/MeowTrack
+PROJECT_NAME=SampleProject
+PROJECT_ROOT=/absoluteProjectPath
 PROJECT_TYPE=typescript
 PROJECT_FRAMEWORK=hono
 
