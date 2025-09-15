@@ -2426,59 +2426,64 @@ async function handleParseAST(request) {
     if (ext === '.ts' || ext === '.tsx') {
       // TypeScriptファイルの解析
       try {
-      // TypeScript用のパーサー設定を修正
-      ast = parse(parseContent, {
-        ecmaVersion: 2022,
-        sourceType: 'module',
-        loc: includeLocations,
-        range: includeLocations,
-        allowHashBang: true,
-        allowImportExportEverywhere: true,
-        allowAwaitOutsideFunction: true,
-        allowReturnOutsideFunction: true,
-        allowSuperOutsideMethod: true,
-        allowUndeclaredExports: true,
-        parserOptions: {
+        // まずJavaScriptとして解析を試行（より安定）
+        const parser = Parser.extend(jsx());
+        ast = parser.parse(parseContent, {
           ecmaVersion: 2022,
           sourceType: 'module',
-          ecmaFeatures: {
-            jsx: ext === '.tsx',
-            globalReturn: true,
-            impliedStrict: false
+          locations: includeLocations,
+          ranges: includeLocations,
+          allowHashBang: true,
+          allowImportExportEverywhere: true,
+          allowAwaitOutsideFunction: true,
+          allowReturnOutsideFunction: true,
+          allowSuperOutsideMethod: true,
+          allowUndeclaredExports: true,
+          plugins: {
+            jsx: ext === '.tsx'
           },
-          project: undefined, // プロジェクト設定を無効化
-          createDefaultProgram: true // デフォルトプログラムを作成
-        },
-        plugins: [
-          'typescript',
-          ext === '.tsx' ? 'jsx' : null
-        ].filter(Boolean)
-      });
-      } catch (tsError) {
-        // TypeScript解析に失敗した場合はJavaScriptとして解析
-        console.error(chalk.yellow('⚠️ TypeScript解析に失敗、JavaScriptとして解析:'), tsError.message);
-        console.error(chalk.gray('📁 ファイル:'), filePath);
-        console.error(chalk.gray('🔍 エラー詳細:'), tsError);
+          jsx: ext === '.tsx' // JSXサポートを明示的に有効化
+        });
+        console.error(chalk.green('✅ TypeScriptファイルをJavaScriptとして解析成功'));
+      } catch (jsError) {
+        // JavaScript解析に失敗した場合はTypeScriptパーサーを試行
+        console.error(chalk.yellow('⚠️ JavaScript解析に失敗、TypeScriptパーサーを試行:'), jsError.message);
         try {
-          const parser = Parser.extend(jsx());
-          ast = parser.parse(parseContent, {
+          // TypeScript用のパーサー設定を修正
+          ast = parse(parseContent, {
             ecmaVersion: 2022,
             sourceType: 'module',
-            locations: includeLocations,
-            ranges: includeLocations,
+            loc: includeLocations,
+            range: includeLocations,
             allowHashBang: true,
             allowImportExportEverywhere: true,
             allowAwaitOutsideFunction: true,
             allowReturnOutsideFunction: true,
             allowSuperOutsideMethod: true,
             allowUndeclaredExports: true,
-            plugins: {
-              jsx: ext === '.tsx'
-            }
+            parserOptions: {
+              ecmaVersion: 2022,
+              sourceType: 'module',
+              ecmaFeatures: {
+                jsx: ext === '.tsx',
+                globalReturn: true,
+                impliedStrict: false
+              },
+              project: undefined, // プロジェクト設定を無効化
+              createDefaultProgram: true, // デフォルトプログラムを作成
+              jsxPragma: 'React', // JSXプラグマを明示的に設定
+              jsxFragmentName: 'Fragment' // Fragment名を設定
+            },
+            plugins: [
+              'typescript',
+              ext === '.tsx' ? 'jsx' : null
+            ].filter(Boolean)
           });
-        } catch (jsError) {
-          console.error(chalk.red('❌ JavaScript解析も失敗:'), jsError.message);
-          throw new Error(`Both TypeScript and JavaScript parsing failed: ${jsError.message}`);
+        } catch (tsError) {
+          console.error(chalk.red('❌ TypeScript解析も失敗:'), tsError.message);
+          console.error(chalk.gray('📁 ファイル:'), filePath);
+          console.error(chalk.gray('🔍 エラー詳細:'), tsError);
+          throw new Error(`Both JavaScript and TypeScript parsing failed: ${tsError.message}`);
         }
       }
     } else {
