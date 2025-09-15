@@ -551,11 +551,26 @@ class BM25Search {
     if (existsSync(this.indexFile)) {
       try {
         const data = readFileSync(this.indexFile, 'utf8');
-        return JSON.parse(data);
+        const index = JSON.parse(data);
+        
+        // インデックスの整合性チェック
+        this.validateIndex(index);
+        
+        console.error(chalk.green('📖 BM25 index loaded:'), this.indexFile);
+        return index;
       } catch (error) {
-        console.error(chalk.yellow('⚠️ Failed to load BM25 index:'), error.message);
+        console.error(chalk.red('❌ Failed to load BM25 index:'), error.message);
+        console.error(chalk.yellow('🔧 Attempting to recover...'));
+        
+        // リカバリ: バックアップファイルを探す
+        const recoveredIndex = this.recoverFromBackup();
+        if (recoveredIndex) {
+          return recoveredIndex;
+        }
       }
     }
+    
+    console.error(chalk.yellow('📝 BM25 index not found, creating new one'));
     return {
       documents: {},
       termFrequencies: {},
@@ -564,30 +579,158 @@ class BM25Search {
     };
   }
 
-  saveIndex() {
+  validateIndex(index) {
     try {
-      writeFileSync(this.indexFile, JSON.stringify(this.index, null, 2));
-      console.error(chalk.green('💾 BM25 index saved:'), this.indexFile);
+      if (!index.documents || !index.documentFrequencies) {
+        throw new Error('Invalid index structure');
+      }
+      
+      const docCount = Object.keys(index.documents).length;
+      if (index.totalDocuments !== docCount) {
+        console.error(chalk.yellow(`⚠️ Document count mismatch: expected ${index.totalDocuments}, found ${docCount}`));
+        index.totalDocuments = docCount;
+      }
+      
+      console.error(chalk.green('✅ BM25 index validation passed'));
+    } catch (error) {
+      console.error(chalk.red('❌ Index validation failed:'), error.message);
+      throw error;
+    }
+  }
+
+  recoverFromBackup() {
+    try {
+      const backupFile = this.indexFile.replace('.json', '_backup.json');
+      if (existsSync(backupFile)) {
+        console.error(chalk.yellow('🔄 Attempting to recover from backup...'));
+        const data = readFileSync(backupFile, 'utf8');
+        const index = JSON.parse(data);
+        console.error(chalk.green('✅ Recovered from backup successfully'));
+        return index;
+      } else {
+        console.error(chalk.red('❌ No backup file found'));
+        return null;
+      }
+    } catch (error) {
+      console.error(chalk.red('❌ Backup recovery failed:'), error.message);
+      return null;
+    }
+  }
+
+  saveIndex() {
+    const startTime = Date.now();
+    try {
+      // インデックスサイズをチェック
+      const indexSize = JSON.stringify(this.index).length;
+      const maxSize = 50 * 1024 * 1024; // 50MB制限
+      
+      console.error(chalk.blue(`💾 Saving BM25 index... (${Math.round(indexSize / 1024)}KB)`));
+      
+      if (indexSize > maxSize) {
+        console.error(chalk.yellow('⚠️ Index too large, compressing...'));
+        this.saveIndexCompressed();
+      } else {
+        // バックアップを作成
+        this.createBackup();
+        
+        writeFileSync(this.indexFile, JSON.stringify(this.index, null, 2));
+        
+        const duration = Date.now() - startTime;
+        console.error(chalk.green(`💾 BM25 index saved: ${this.indexFile} (${duration}ms)`));
+        console.error(chalk.blue(`📊 Index stats: ${this.index.totalDocuments} documents, ${Object.keys(this.index.documentFrequencies).length} unique terms`));
+      }
     } catch (error) {
       console.error(chalk.red('❌ Failed to save BM25 index:'), error.message);
+      console.error(chalk.red('🔧 Error details:'), error.stack);
+      
+      // フォールバック: 圧縮保存を試行
+      try {
+        this.saveIndexCompressed();
+      } catch (fallbackError) {
+        console.error(chalk.red('❌ Fallback save also failed:'), fallbackError.message);
+        console.error(chalk.red('🚨 Critical error: Index cannot be saved!'));
+      }
+    }
+  }
+
+  createBackup() {
+    try {
+      const backupFile = this.indexFile.replace('.json', '_backup.json');
+      if (existsSync(this.indexFile)) {
+        const data = readFileSync(this.indexFile, 'utf8');
+        writeFileSync(backupFile, data);
+        console.error(chalk.green('💾 Backup created:'), backupFile);
+      }
+    } catch (error) {
+      console.error(chalk.yellow('⚠️ Failed to create backup:'), error.message);
+    }
+  }
+
+  saveIndexCompressed() {
+    try {
+      // ドキュメントを分割して保存
+      const documents = this.index.documents;
+      const documentIds = Object.keys(documents);
+      const batchSize = 100; // 100ドキュメントずつ保存
+      
+      // メタデータを保存
+      const metadata = {
+        totalDocuments: this.index.totalDocuments,
+        documentFrequencies: this.index.documentFrequencies,
+        documentCount: documentIds.length
+      };
+      
+      writeFileSync(this.indexFile, JSON.stringify(metadata, null, 2));
+      
+      // ドキュメントをバッチで保存
+      for (let i = 0; i < documentIds.length; i += batchSize) {
+        const batch = documentIds.slice(i, i + batchSize);
+        const batchData = {};
+        batch.forEach(id => {
+          batchData[id] = documents[id];
+        });
+        
+        const batchFile = this.indexFile.replace('.json', `_batch_${Math.floor(i / batchSize)}.json`);
+        writeFileSync(batchFile, JSON.stringify(batchData, null, 2));
+      }
+      
+      console.error(chalk.green('💾 BM25 index saved (compressed):'), this.indexFile);
+    } catch (error) {
+      console.error(chalk.red('❌ Failed to save compressed BM25 index:'), error.message);
+      throw error;
     }
   }
 
   addDocument(docId, content) {
+    // コンテンツサイズをチェック（メモリ効率化）
+    const maxContentSize = 100000; // 100KB制限
+    if (content.length > maxContentSize) {
+      console.error(chalk.yellow(`⚠️ Content too large for ${docId}, truncating...`));
+      content = content.substring(0, maxContentSize) + '... [TRUNCATED]';
+    }
+
     const tokenizer = new natural.WordTokenizer();
     const tokens = tokenizer.tokenize(content.toLowerCase());
     const termFreq = {};
     
-    // 単語頻度を計算
+    // 単語頻度を計算（ストップワードを除外）
+    const stopWords = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should']);
+    
     tokens.forEach(token => {
-      termFreq[token] = (termFreq[token] || 0) + 1;
+      if (token.length > 2 && !stopWords.has(token)) { // 2文字以下とストップワードを除外
+        termFreq[token] = (termFreq[token] || 0) + 1;
+      }
     });
 
+    // メモリ効率化: 完全なコンテンツではなく要約を保存
+    const summary = content.length > 500 ? content.substring(0, 500) + '...' : content;
+    
     this.index.documents[docId] = {
-      content: content,
-      tokens: tokens,
+      summary: summary,
       termFreq: termFreq,
-      length: tokens.length
+      length: tokens.length,
+      fullSize: content.length,
+      timestamp: Date.now()
     };
 
     // 文書頻度を更新
@@ -599,7 +742,11 @@ class BM25Search {
     });
 
     this.index.totalDocuments++;
-    this.saveIndex();
+    
+    // バッチ保存（パフォーマンス向上）
+    if (this.index.totalDocuments % 10 === 0) {
+      this.saveIndex();
+    }
   }
 
   search(query, k1 = 1.2, b = 0.75) {
@@ -666,10 +813,65 @@ class VectorSearch {
 
   saveIndex() {
     try {
-      writeFileSync(this.indexFile, JSON.stringify(this.index, null, 2));
-      console.error(chalk.green('💾 Vector index saved:'), this.indexFile);
+      // インデックスサイズをチェック
+      const indexSize = JSON.stringify(this.index).length;
+      const maxSize = 50 * 1024 * 1024; // 50MB制限
+      
+      if (indexSize > maxSize) {
+        console.error(chalk.yellow('⚠️ Vector index too large, compressing...'));
+        this.saveIndexCompressed();
+      } else {
+        writeFileSync(this.indexFile, JSON.stringify(this.index, null, 2));
+        console.error(chalk.green('💾 Vector index saved:'), this.indexFile);
+      }
     } catch (error) {
       console.error(chalk.red('❌ Failed to save vector index:'), error.message);
+      // フォールバック: 圧縮保存を試行
+      try {
+        this.saveIndexCompressed();
+      } catch (fallbackError) {
+        console.error(chalk.red('❌ Fallback save also failed:'), fallbackError.message);
+      }
+    }
+  }
+
+  saveIndexCompressed() {
+    try {
+      // ドキュメントとベクトルを分割して保存
+      const documents = this.index.documents;
+      const vectors = this.index.vectors;
+      const documentIds = Object.keys(documents);
+      const batchSize = 50; // ベクトルは重いので50ドキュメントずつ
+      
+      // メタデータを保存
+      const metadata = {
+        documentCount: documentIds.length,
+        dimensions: 384 // ベクトル次元数
+      };
+      
+      writeFileSync(this.indexFile, JSON.stringify(metadata, null, 2));
+      
+      // ドキュメントとベクトルをバッチで保存
+      for (let i = 0; i < documentIds.length; i += batchSize) {
+        const batch = documentIds.slice(i, i + batchSize);
+        const batchData = {
+          documents: {},
+          vectors: {}
+        };
+        
+        batch.forEach(id => {
+          batchData.documents[id] = documents[id];
+          batchData.vectors[id] = vectors[id];
+        });
+        
+        const batchFile = this.indexFile.replace('.json', `_batch_${Math.floor(i / batchSize)}.json`);
+        writeFileSync(batchFile, JSON.stringify(batchData, null, 2));
+      }
+      
+      console.error(chalk.green('💾 Vector index saved (compressed):'), this.indexFile);
+    } catch (error) {
+      console.error(chalk.red('❌ Failed to save compressed vector index:'), error.message);
+      throw error;
     }
   }
 
@@ -703,10 +905,26 @@ class VectorSearch {
   }
 
   addDocument(docId, content) {
+    // コンテンツサイズをチェック（メモリ効率化）
+    const maxContentSize = 50000; // ベクトルは重いので50KB制限
+    if (content.length > maxContentSize) {
+      console.error(chalk.yellow(`⚠️ Content too large for vector ${docId}, truncating...`));
+      content = content.substring(0, maxContentSize) + '... [TRUNCATED]';
+    }
+
     const vector = this.vectorize(content);
-    this.index.documents[docId] = content;
+    
+    // メモリ効率化: 要約を保存
+    const summary = content.length > 200 ? content.substring(0, 200) + '...' : content;
+    
+    this.index.documents[docId] = summary;
     this.index.vectors[docId] = vector;
-    this.saveIndex();
+    
+    // バッチ保存（パフォーマンス向上）
+    const docCount = Object.keys(this.index.documents).length;
+    if (docCount % 5 === 0) { // ベクトルは重いので5ファイルごと
+      this.saveIndex();
+    }
   }
 
   search(query, threshold = 0.7) {
@@ -728,9 +946,233 @@ class VectorSearch {
   }
 }
 
+// 自動インデックス作成機能
+async function createInitialIndex() {
+  if (!config.hybridSearch || !config.hybridSearch.enabled || !config.hybridSearch.autoIndex) {
+    return;
+  }
+
+  console.error(chalk.blue('🚀 Starting automatic index creation...'));
+  
+  try {
+    // ファイルパターンを取得
+    const patterns = config.fileSearch?.patterns || ['**/*.{ts,js,tsx,jsx,md,txt}'];
+    const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
+    
+    // ファイルを検索
+    const files = await glob(patterns, { 
+      ignore: excludePatterns,
+      cwd: PROJECT_ROOT
+    });
+    
+    console.error(chalk.green('📁 Found files for indexing:'), files.length);
+    
+    // インデックス作成の進捗を追跡
+    let indexedCount = 0;
+    const maxFiles = Math.min(files.length, 100); // 最初の100ファイルのみ
+    
+    for (const file of files.slice(0, maxFiles)) {
+      try {
+        const content = readFileSync(file, 'utf8');
+        const docId = file.replace(PROJECT_ROOT, '').replace(/^\//, '');
+        
+        // BM25インデックスに追加
+        if (bm25Search) {
+          bm25Search.addDocument(docId, content);
+        }
+        
+        // ベクトルインデックスに追加
+        if (vectorSearch) {
+          vectorSearch.addDocument(docId, content);
+        }
+        
+        indexedCount++;
+        
+        // 進捗表示（10ファイルごと）
+        if (indexedCount % 10 === 0) {
+          console.error(chalk.blue(`📊 Indexed ${indexedCount}/${maxFiles} files...`));
+        }
+        
+      } catch (error) {
+        console.error(chalk.yellow(`⚠️ Failed to index ${file}:`), error.message);
+      }
+    }
+    
+    console.error(chalk.green(`✅ Index creation completed! Indexed ${indexedCount} files.`));
+    
+  } catch (error) {
+    console.error(chalk.red('❌ Failed to create initial index:'), error.message);
+  }
+}
+
+// インデックス更新機能
+async function updateIndex() {
+  if (!config.hybridSearch || !config.hybridSearch.enabled) {
+    return;
+  }
+
+  console.error(chalk.blue('🔄 Updating search index...'));
+  
+  try {
+    // ファイルパターンを取得
+    const patterns = config.fileSearch?.patterns || ['**/*.{ts,js,tsx,jsx,md,txt}'];
+    const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
+    
+    // ファイルを検索
+    const files = await glob(patterns, { 
+      ignore: excludePatterns,
+      cwd: PROJECT_ROOT
+    });
+    
+    console.error(chalk.green('📁 Found files for indexing:'), files.length);
+    
+    // インデックス更新の進捗を追跡
+    let updatedCount = 0;
+    const maxFiles = Math.min(files.length, 50); // 更新時は50ファイルまで
+    
+    for (const file of files.slice(0, maxFiles)) {
+      try {
+        const content = readFileSync(file, 'utf8');
+        const docId = file.replace(PROJECT_ROOT, '').replace(/^\//, '');
+        
+        // BM25インデックスに追加/更新
+        if (bm25Search) {
+          bm25Search.addDocument(docId, content);
+        }
+        
+        // ベクトルインデックスに追加/更新
+        if (vectorSearch) {
+          vectorSearch.addDocument(docId, content);
+        }
+        
+        updatedCount++;
+        
+        // 進捗表示（5ファイルごと）
+        if (updatedCount % 5 === 0) {
+          console.error(chalk.blue(`📊 Updated ${updatedCount}/${maxFiles} files...`));
+        }
+        
+      } catch (error) {
+        console.error(chalk.yellow(`⚠️ Failed to update ${file}:`), error.message);
+      }
+    }
+    
+    console.error(chalk.green(`✅ Index update completed! Updated ${updatedCount} files.`));
+    
+  } catch (error) {
+    console.error(chalk.red('❌ Failed to update index:'), error.message);
+  }
+}
+
+// インデックス削除機能
+function clearIndex() {
+  if (!config.hybridSearch || !config.hybridSearch.enabled) {
+    return;
+  }
+
+  console.error(chalk.blue('🗑️ Clearing search index...'));
+  
+  try {
+    // BM25インデックスをクリア
+    if (bm25Search) {
+      bm25Search.index = {
+        documents: {},
+        termFrequencies: {},
+        documentFrequencies: {},
+        totalDocuments: 0
+      };
+      bm25Search.saveIndex();
+    }
+    
+    // ベクトルインデックスをクリア
+    if (vectorSearch) {
+      vectorSearch.index = {
+        documents: {},
+        vectors: {}
+      };
+      vectorSearch.saveIndex();
+    }
+    
+    console.error(chalk.green('✅ Index cleared successfully!'));
+    
+  } catch (error) {
+    console.error(chalk.red('❌ Failed to clear index:'), error.message);
+  }
+}
+
 // ハイブリッド検索インスタンスの初期化
 let bm25Search = null;
 let vectorSearch = null;
+
+// パフォーマンス監視
+const performanceMonitor = {
+  startTime: Date.now(),
+  operationCounts: {},
+  memoryUsage: process.memoryUsage(),
+  operationTimes: {},
+  
+  recordOperation(operation, startTime = null) {
+    this.operationCounts[operation] = (this.operationCounts[operation] || 0) + 1;
+    
+    if (startTime) {
+      const duration = Date.now() - startTime;
+      if (!this.operationTimes[operation]) {
+        this.operationTimes[operation] = [];
+      }
+      this.operationTimes[operation].push(duration);
+      
+      // 最新10回の実行時間のみ保持
+      if (this.operationTimes[operation].length > 10) {
+        this.operationTimes[operation] = this.operationTimes[operation].slice(-10);
+      }
+    }
+  },
+  
+  getStats() {
+    const uptime = Date.now() - this.startTime;
+    const currentMemory = process.memoryUsage();
+    
+    // 平均実行時間を計算
+    const avgTimes = {};
+    Object.keys(this.operationTimes).forEach(operation => {
+      const times = this.operationTimes[operation];
+      avgTimes[operation] = times.reduce((a, b) => a + b, 0) / times.length;
+    });
+    
+    return {
+      uptime: uptime,
+      operations: this.operationCounts,
+      averageTimes: avgTimes,
+      memoryUsage: {
+        rss: Math.round(currentMemory.rss / 1024 / 1024), // MB
+        heapUsed: Math.round(currentMemory.heapUsed / 1024 / 1024), // MB
+        heapTotal: Math.round(currentMemory.heapTotal / 1024 / 1024), // MB
+        external: Math.round(currentMemory.external / 1024 / 1024) // MB
+      },
+      memoryGrowth: {
+        rss: Math.round((currentMemory.rss - this.memoryUsage.rss) / 1024 / 1024), // MB
+        heapUsed: Math.round((currentMemory.heapUsed - this.memoryUsage.heapUsed) / 1024 / 1024) // MB
+      }
+    };
+  },
+  
+  logPerformanceStats() {
+    const stats = this.getStats();
+    console.error(chalk.blue('📊 Performance Stats:'));
+    console.error(chalk.blue(`⏱️  Uptime: ${Math.round(stats.uptime / 1000)}s`));
+    console.error(chalk.blue(`💾 Memory: ${stats.memoryUsage.heapUsed}MB used / ${stats.memoryUsage.heapTotal}MB total`));
+    console.error(chalk.blue(`📈 Memory Growth: +${stats.memoryGrowth.heapUsed}MB`));
+    
+    if (Object.keys(stats.operations).length > 0) {
+      console.error(chalk.blue('🔧 Operations:'));
+      Object.keys(stats.operations).forEach(op => {
+        const count = stats.operations[op];
+        const avgTime = stats.averageTimes[op] ? `${Math.round(stats.averageTimes[op])}ms` : 'N/A';
+        console.error(chalk.blue(`  ${op}: ${count} times (avg: ${avgTime})`));
+      });
+    }
+  }
+};
 
 if (config.hybridSearch && config.hybridSearch.enabled) {
   if (config.hybridSearch.bm25 && config.hybridSearch.bm25.enabled) {
@@ -742,6 +1184,11 @@ if (config.hybridSearch && config.hybridSearch.enabled) {
     vectorSearch = new VectorSearch(config.hybridSearch.vector.indexPath);
     console.error(chalk.green('🔍 Vector search initialized:'), resolvePath(config.hybridSearch.vector.indexPath));
   }
+  
+  // 自動インデックス作成を実行
+  createInitialIndex().catch(error => {
+    console.error(chalk.red('❌ Auto index creation failed:'), error.message);
+  });
 }
 
 // 最終的な統合された設定を表示
@@ -1114,6 +1561,38 @@ async function main() {
                     }
                   },
                   {
+                    name: 'create_index',
+                    description: '検索用のインデックスを手動で作成します',
+                    inputSchema: {
+                      type: 'object',
+                      properties: {
+                        maxFiles: { type: 'number', description: '最大インデックスファイル数（デフォルト: 100）', default: 100 },
+                        force: { type: 'boolean', description: '既存のインデックスを上書きするかどうか（デフォルト: false）', default: false }
+                      },
+                      required: []
+                    }
+                  },
+                  {
+                    name: 'update_index',
+                    description: '既存のインデックスを更新します',
+                    inputSchema: {
+                      type: 'object',
+                      properties: {
+                        maxFiles: { type: 'number', description: '最大更新ファイル数（デフォルト: 50）', default: 50 }
+                      },
+                      required: []
+                    }
+                  },
+                  {
+                    name: 'clear_index',
+                    description: '検索インデックスをクリアします',
+                    inputSchema: {
+                      type: 'object',
+                      properties: {},
+                      required: []
+                    }
+                  },
+                  {
                     name: 'hybrid_search',
                     description: 'BM25とベクトル検索を組み合わせたハイブリッド検索を実行します',
                     inputSchema: {
@@ -1281,6 +1760,15 @@ async function main() {
               case 'optimize_performance':
                 response = await handleOptimizePerformance(request);
                 break;
+              case 'create_index':
+                response = await handleCreateIndex(request);
+                break;
+              case 'update_index':
+                response = await handleUpdateIndex(request);
+                break;
+              case 'clear_index':
+                response = await handleClearIndex(request);
+                break;
               case 'hybrid_search':
                 response = await handleHybridSearch(request);
                 break;
@@ -1352,6 +1840,15 @@ async function main() {
                   break;
                 case 'optimize_performance':
                   resultsLog = `Performance optimized: ${result.cacheHitRate || 0}% cache hit rate, ${result.memorySaved || 0}MB memory saved`;
+                  break;
+                case 'create_index':
+                  resultsLog = `Index created: ${result.indexedFiles || 0} files indexed`;
+                  break;
+                case 'update_index':
+                  resultsLog = `Index updated: ${result.updatedFiles || 0} files updated`;
+                  break;
+                case 'clear_index':
+                  resultsLog = `Index cleared: ${result.clearedIndexes || 0} indexes cleared`;
                   break;
                 case 'hybrid_search':
                   resultsLog = `Hybrid search: ${result.results?.length || 0} results found with ${result.bm25Score || 0} BM25 score`;
@@ -1901,18 +2398,22 @@ async function handleParseAST(request) {
     if (ext === '.ts' || ext === '.tsx') {
       // TypeScriptファイルの解析
       try {
+        // TypeScript用のパーサー設定を修正
         ast = parse(parseContent, {
           ecmaVersion: 2022,
           sourceType: 'module',
           loc: includeLocations,
           range: includeLocations,
-          parserOptions: {
-            ecmaVersion: 2022,
-            sourceType: 'module',
-            ecmaFeatures: {
-              jsx: ext === '.tsx'
-            }
-          }
+          allowHashBang: true,
+          allowImportExportEverywhere: true,
+          allowAwaitOutsideFunction: true,
+          allowReturnOutsideFunction: true,
+          allowSuperOutsideMethod: true,
+          allowUndeclaredExports: true,
+          plugins: [
+            'typescript',
+            ext === '.tsx' ? 'jsx' : null
+          ].filter(Boolean)
         });
       } catch (tsError) {
         // TypeScript解析に失敗した場合はJavaScriptとして解析
@@ -2245,7 +2746,222 @@ async function handleOptimizePerformance(request) {
   }
 }
 
+async function handleCreateIndex(request) {
+  console.error(chalk.blue('🔍 create_index 実行中 / Executing create_index'));
+  
+  try {
+    const maxFiles = request.params.arguments.maxFiles || 100;
+    const force = request.params.arguments.force || false;
+    
+    if (!config.hybridSearch || !config.hybridSearch.enabled) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32601,
+          message: 'Hybrid search is disabled in configuration'
+        }
+      };
+    }
+    
+    // 強制作成でない場合は既存のインデックスをチェック
+    if (!force) {
+      const bm25Empty = !bm25Search || Object.keys(bm25Search.index.documents).length === 0;
+      const vectorEmpty = !vectorSearch || Object.keys(vectorSearch.index.documents).length === 0;
+      
+      if (!bm25Empty || !vectorEmpty) {
+        return {
+          jsonrpc: '2.0',
+          id: request.id,
+          result: {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                message: 'Index already exists. Use force: true to overwrite.',
+                bm25Documents: bm25Search ? Object.keys(bm25Search.index.documents).length : 0,
+                vectorDocuments: vectorSearch ? Object.keys(vectorSearch.index.documents).length : 0,
+                timestamp: new Date().toISOString()
+              }, null, 2)
+            }]
+          }
+        };
+      }
+    }
+    
+    console.error(chalk.blue('🚀 Creating index manually...'));
+    
+    // ファイルパターンを取得
+    const patterns = config.fileSearch?.patterns || ['**/*.{ts,js,tsx,jsx,md,txt}'];
+    const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
+    
+    // ファイルを検索
+    const files = await glob(patterns, { 
+      ignore: excludePatterns,
+      cwd: PROJECT_ROOT
+    });
+    
+    console.error(chalk.green('📁 Found files for indexing:'), files.length);
+    
+    // インデックス作成の進捗を追跡
+    let indexedCount = 0;
+    const actualMaxFiles = Math.min(files.length, maxFiles);
+    
+    for (const file of files.slice(0, actualMaxFiles)) {
+      try {
+        const content = readFileSync(file, 'utf8');
+        const docId = file.replace(PROJECT_ROOT, '').replace(/^\//, '');
+        
+        // BM25インデックスに追加
+        if (bm25Search) {
+          bm25Search.addDocument(docId, content);
+        }
+        
+        // ベクトルインデックスに追加
+        if (vectorSearch) {
+          vectorSearch.addDocument(docId, content);
+        }
+        
+        indexedCount++;
+        
+        // 進捗表示（10ファイルごと）
+        if (indexedCount % 10 === 0) {
+          console.error(chalk.blue(`📊 Indexed ${indexedCount}/${actualMaxFiles} files...`));
+        }
+        
+      } catch (error) {
+        console.error(chalk.yellow(`⚠️ Failed to index ${file}:`), error.message);
+      }
+    }
+    
+    const result = {
+      indexedFiles: indexedCount,
+      totalFiles: files.length,
+      maxFiles: actualMaxFiles,
+      bm25Enabled: config.hybridSearch.bm25?.enabled || false,
+      vectorEnabled: config.hybridSearch.vector?.enabled || false,
+      timestamp: new Date().toISOString()
+    };
+    
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(result, null, 2)
+        }]
+      }
+    };
+  } catch (error) {
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      error: {
+        code: -32603,
+        message: `Internal error: ${error.message}`
+      }
+    };
+  }
+}
+
+async function handleUpdateIndex(request) {
+  console.error(chalk.blue('🔍 update_index 実行中 / Executing update_index'));
+  
+  try {
+    const maxFiles = request.params.arguments.maxFiles || 50;
+    
+    if (!config.hybridSearch || !config.hybridSearch.enabled) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32601,
+          message: 'Hybrid search is disabled in configuration'
+        }
+      };
+    }
+    
+    await updateIndex();
+    
+    const result = {
+      updatedFiles: maxFiles,
+      bm25Enabled: config.hybridSearch.bm25?.enabled || false,
+      vectorEnabled: config.hybridSearch.vector?.enabled || false,
+      timestamp: new Date().toISOString()
+    };
+    
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(result, null, 2)
+        }]
+      }
+    };
+  } catch (error) {
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      error: {
+        code: -32603,
+        message: `Internal error: ${error.message}`
+      }
+    };
+  }
+}
+
+async function handleClearIndex(request) {
+  console.error(chalk.blue('🔍 clear_index 実行中 / Executing clear_index'));
+  
+  try {
+    if (!config.hybridSearch || !config.hybridSearch.enabled) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: {
+          code: -32601,
+          message: 'Hybrid search is disabled in configuration'
+        }
+      };
+    }
+    
+    clearIndex();
+    
+    const result = {
+      clearedIndexes: 2, // BM25とVector
+      bm25Enabled: config.hybridSearch.bm25?.enabled || false,
+      vectorEnabled: config.hybridSearch.vector?.enabled || false,
+      timestamp: new Date().toISOString()
+    };
+    
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(result, null, 2)
+        }]
+      }
+    };
+  } catch (error) {
+    return {
+      jsonrpc: '2.0',
+      id: request.id,
+      error: {
+        code: -32603,
+        message: `Internal error: ${error.message}`
+      }
+    };
+  }
+}
+
 async function handleHybridSearch(request) {
+  const startTime = Date.now();
+  performanceMonitor.recordOperation('hybrid_search', startTime);
+  
   console.error(chalk.blue('🔍 hybrid_search 実行中 / Executing hybrid_search:'), request.params.arguments.query);
   
   try {
@@ -2267,32 +2983,13 @@ async function handleHybridSearch(request) {
     
     console.error(chalk.blue('🔍 Hybrid search query:'), query);
     
-    // ファイルをインデックスに追加（初回実行時）
-    const patterns = config.fileSearch?.patterns || ['**/*.{ts,js,tsx,jsx,md,txt}'];
-    const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
+    // インデックスが空の場合は自動でインデックスを作成
+    const bm25Empty = !bm25Search || Object.keys(bm25Search.index.documents).length === 0;
+    const vectorEmpty = !vectorSearch || Object.keys(vectorSearch.index.documents).length === 0;
     
-    const files = await glob(patterns, { 
-      ignore: excludePatterns,
-      cwd: PROJECT_ROOT
-    });
-    
-    console.error(chalk.green('📁 Found files for indexing:'), files.length);
-    
-    // ファイルをインデックスに追加
-    for (const file of files.slice(0, 50)) { // 最初の50ファイルのみインデックス
-      try {
-        const content = readFileSync(file, 'utf8');
-        const docId = file.replace(PROJECT_ROOT, '').replace(/^\//, '');
-        
-        if (bm25Search) {
-          bm25Search.addDocument(docId, content);
-        }
-        if (vectorSearch) {
-          vectorSearch.addDocument(docId, content);
-        }
-      } catch (e) {
-        // ファイル読み込みエラーは無視
-      }
+    if (bm25Empty || vectorEmpty) {
+      console.error(chalk.blue('🔄 Index is empty, creating index automatically...'));
+      await updateIndex();
     }
     
     // ハイブリッド検索の実行
