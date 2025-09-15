@@ -2426,64 +2426,80 @@ async function handleParseAST(request) {
     if (ext === '.ts' || ext === '.tsx') {
       // TypeScriptファイルの解析
       try {
-        // まずJavaScriptとして解析を試行（より安定）
-        const parser = Parser.extend(jsx());
-        ast = parser.parse(parseContent, {
+        // TypeScript用のパーサー設定を修正（最初からTypeScriptパーサーを使用）
+        ast = parse(parseContent, {
           ecmaVersion: 2022,
           sourceType: 'module',
-          locations: includeLocations,
-          ranges: includeLocations,
+          loc: includeLocations,
+          range: includeLocations,
           allowHashBang: true,
           allowImportExportEverywhere: true,
           allowAwaitOutsideFunction: true,
           allowReturnOutsideFunction: true,
           allowSuperOutsideMethod: true,
           allowUndeclaredExports: true,
-          plugins: {
-            jsx: ext === '.tsx'
-          },
-          jsx: ext === '.tsx' // JSXサポートを明示的に有効化
-        });
-        console.error(chalk.green('✅ TypeScriptファイルをJavaScriptとして解析成功'));
-      } catch (jsError) {
-        // JavaScript解析に失敗した場合はTypeScriptパーサーを試行
-        console.error(chalk.yellow('⚠️ JavaScript解析に失敗、TypeScriptパーサーを試行:'), jsError.message);
-        try {
-          // TypeScript用のパーサー設定を修正
-          ast = parse(parseContent, {
+          parserOptions: {
             ecmaVersion: 2022,
             sourceType: 'module',
-            loc: includeLocations,
-            range: includeLocations,
+            ecmaFeatures: {
+              jsx: ext === '.tsx',
+              globalReturn: true,
+              impliedStrict: false
+            },
+            project: undefined, // プロジェクト設定を無効化
+            createDefaultProgram: true, // デフォルトプログラムを作成
+            jsxPragma: 'React', // JSXプラグマを明示的に設定
+            jsxFragmentName: 'Fragment', // Fragment名を設定
+            useJSXTextNode: true, // JSXテキストノードを使用
+            allowJs: true, // JavaScriptファイルも許可
+            skipLibCheck: true // ライブラリチェックをスキップ
+          },
+          plugins: [
+            'typescript',
+            ext === '.tsx' ? 'jsx' : null
+          ].filter(Boolean)
+        });
+        console.error(chalk.green('✅ TypeScriptファイルをTypeScriptパーサーで解析成功'));
+      } catch (tsError) {
+        // TypeScript解析に失敗した場合はJavaScriptとして解析を試行
+        console.error(chalk.yellow('⚠️ TypeScript解析に失敗、JavaScriptとして解析を試行:'), tsError.message);
+        console.error(chalk.gray('📁 ファイル:'), filePath);
+        console.error(chalk.gray('🔍 エラー詳細:'), tsError);
+        
+        try {
+          // TypeScript構文を簡略化してJavaScriptとして解析
+          let simplifiedContent = parseContent;
+          
+          // 基本的なTypeScript構文を除去
+          simplifiedContent = simplifiedContent
+            .replace(/:\s*[A-Za-z_$][A-Za-z0-9_$<>\[\]|,\s]*/g, '') // 型注釈を除去
+            .replace(/<[A-Za-z_$][A-Za-z0-9_$<>\[\]|,\s]*>/g, '') // ジェネリクスを除去
+            .replace(/as\s+[A-Za-z_$][A-Za-z0-9_$<>\[\]|,\s]*/g, '') // as キャストを除去
+            .replace(/interface\s+[A-Za-z_$][A-Za-z0-9_$]*\s*{[^}]*}/g, '') // interfaceを除去
+            .replace(/type\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=[^;]+;/g, '') // typeを除去
+            .replace(/enum\s+[A-Za-z_$][A-Za-z0-9_$]*\s*{[^}]*}/g, ''); // enumを除去
+          
+          const parser = Parser.extend(jsx());
+          ast = parser.parse(simplifiedContent, {
+            ecmaVersion: 2022,
+            sourceType: 'module',
+            locations: includeLocations,
+            ranges: includeLocations,
             allowHashBang: true,
             allowImportExportEverywhere: true,
             allowAwaitOutsideFunction: true,
             allowReturnOutsideFunction: true,
             allowSuperOutsideMethod: true,
             allowUndeclaredExports: true,
-            parserOptions: {
-              ecmaVersion: 2022,
-              sourceType: 'module',
-              ecmaFeatures: {
-                jsx: ext === '.tsx',
-                globalReturn: true,
-                impliedStrict: false
-              },
-              project: undefined, // プロジェクト設定を無効化
-              createDefaultProgram: true, // デフォルトプログラムを作成
-              jsxPragma: 'React', // JSXプラグマを明示的に設定
-              jsxFragmentName: 'Fragment' // Fragment名を設定
+            plugins: {
+              jsx: ext === '.tsx'
             },
-            plugins: [
-              'typescript',
-              ext === '.tsx' ? 'jsx' : null
-            ].filter(Boolean)
+            jsx: ext === '.tsx' // JSXサポートを明示的に有効化
           });
-        } catch (tsError) {
-          console.error(chalk.red('❌ TypeScript解析も失敗:'), tsError.message);
-          console.error(chalk.gray('📁 ファイル:'), filePath);
-          console.error(chalk.gray('🔍 エラー詳細:'), tsError);
-          throw new Error(`Both JavaScript and TypeScript parsing failed: ${tsError.message}`);
+          console.error(chalk.green('✅ TypeScriptファイルを簡略化してJavaScriptとして解析成功'));
+        } catch (jsError) {
+          console.error(chalk.red('❌ JavaScript解析も失敗:'), jsError.message);
+          throw new Error(`Both TypeScript and JavaScript parsing failed: ${jsError.message}`);
         }
       }
     } else {
