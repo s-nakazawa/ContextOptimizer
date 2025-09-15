@@ -2210,45 +2210,65 @@ async function handleExtractFunction(request) {
   }
 }
 
-// AST解析で関数を抽出するヘルパー関数
+// AST解析で関数を抽出するヘルパー関数（拡張子ベースのロジック分離）
 async function extractFunctionFromAST(content, targetName, filePath) {
   try {
-    // より柔軟なパーサー設定
+    const ext = extname(filePath).toLowerCase();
+    console.error(chalk.gray(`🔍 Processing ${ext} file: ${filePath}`));
+    
+    // 拡張子に応じて適切なパーサーとロジックを選択
+    if (ext === '.js' || ext === '.jsx') {
+      return await extractFromJavaScript(content, targetName, filePath);
+    } else if (ext === '.ts' || ext === '.tsx') {
+      return await extractFromTypeScript(content, targetName, filePath);
+    } else {
+      // その他の拡張子の場合はJavaScriptとして処理
+      console.error(chalk.yellow(`⚠️ Unknown extension ${ext}, treating as JavaScript`));
+      return await extractFromJavaScript(content, targetName, filePath);
+    }
+    
+  } catch (error) {
+    console.error(chalk.yellow('⚠️ AST parsing error:'), error.message);
+    console.error(chalk.gray('  File:', filePath));
+    console.error(chalk.gray('  Target:', targetName));
+    return { found: false, content: '', details: [] };
+  }
+}
+
+// JavaScriptファイル用の関数抽出
+async function extractFromJavaScript(content, targetName, filePath) {
+  try {
     const parser = Parser.extend(jsx());
     
-    // まずmoduleとして解析を試行
-    let ast;
-    let sourceType = 'module';
+    // JavaScript用のパーサー設定（より寛容）
+    const parseOptions = {
+      ecmaVersion: 2022,
+      sourceType: 'script', // JavaScriptは通常script
+      allowHashBang: true,
+      allowAwaitOutsideFunction: true,
+      allowReturnOutsideFunction: true,
+      allowSuperOutsideMethod: true,
+      locations: true,
+      ranges: true,
+      plugins: {
+        jsx: filePath.endsWith('.jsx')
+      }
+    };
     
+    let ast;
     try {
-      ast = parser.parse(content, {
-        ecmaVersion: 2022,
-        sourceType: 'module',
-        allowHashBang: true,
-        allowImportExportEverywhere: true,
-        allowAwaitOutsideFunction: true,
-        allowReturnOutsideFunction: true,
-        allowSuperOutsideMethod: true,
-        allowUndeclaredExports: true,
-        locations: true,
-        ranges: true
-      });
-    } catch (moduleError) {
-      // moduleとして解析できない場合はscriptとして試行
+      ast = parser.parse(content, parseOptions);
+    } catch (scriptError) {
+      // scriptとして解析できない場合はmoduleとして試行
       try {
         ast = parser.parse(content, {
-          ecmaVersion: 2022,
-          sourceType: 'script',
-          allowHashBang: true,
-          allowAwaitOutsideFunction: true,
-          allowReturnOutsideFunction: true,
-          allowSuperOutsideMethod: true,
-          locations: true,
-          ranges: true
+          ...parseOptions,
+          sourceType: 'module',
+          allowImportExportEverywhere: true,
+          allowUndeclaredExports: true
         });
-        sourceType = 'script';
-      } catch (scriptError) {
-        console.error(chalk.yellow('⚠️ Both module and script parsing failed:'), scriptError.message);
+      } catch (moduleError) {
+        console.error(chalk.yellow('⚠️ JavaScript parsing failed:'), moduleError.message);
         return { found: false, content: '', details: [] };
       }
     }
@@ -2256,125 +2276,41 @@ async function extractFunctionFromAST(content, targetName, filePath) {
     const found = [];
     const details = [];
     
-    // より包括的な関数検索
+    // JavaScript特有の関数検索パターン
     walk(ast, {
       // 関数宣言
       FunctionDeclaration: (node) => {
         if (node.id && node.id.name === targetName) {
-          const startLine = node.loc?.start.line || 0;
-          const endLine = node.loc?.end.line || 0;
-          const functionCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
-          
-          const isAsync = node.async ? 'async ' : '';
-          const isGenerator = node.generator ? '*' : '';
-          const signature = `${isAsync}function${isGenerator} ${node.id.name}(${node.params.map(p => p.name || '...').join(', ')})`;
-          
-          found.push({
-            type: 'function',
-            name: node.id.name,
-            line: startLine,
-            code: functionCode,
-            signature: signature
-          });
-          
-          details.push({
-            type: 'Function Declaration',
-            name: node.id.name,
-            file: filePath,
-            line: startLine,
-            signature: signature
-          });
+          const result = extractFunctionInfo(node, content, filePath, 'Function Declaration');
+          found.push(result.found);
+          details.push(result.details);
         }
       },
       
       // 変数宣言（関数式、アロー関数）
       VariableDeclarator: (node) => {
         if (node.id && node.id.name === targetName) {
-          const startLine = node.loc?.start.line || 0;
-          const endLine = node.loc?.end.line || 0;
-          const functionCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
-          
-          let signature = '';
-          if (node.init && node.init.type === 'ArrowFunctionExpression') {
-            const isAsync = node.init.async ? 'async ' : '';
-            signature = `const ${node.id.name} = ${isAsync}(${node.init.params.map(p => p.name || '...').join(', ')}) => ...`;
-          } else if (node.init && node.init.type === 'FunctionExpression') {
-            const isAsync = node.init.async ? 'async ' : '';
-            const isGenerator = node.init.generator ? '*' : '';
-            signature = `const ${node.id.name} = ${isAsync}function${isGenerator}(${node.init.params.map(p => p.name || '...').join(', ')}) ...`;
-          } else {
-            signature = `const ${node.id.name} = ...`;
-          }
-          
-          found.push({
-            type: 'variable',
-            name: node.id.name,
-            line: startLine,
-            code: functionCode,
-            signature: signature
-          });
-          
-          details.push({
-            type: 'Variable Declaration',
-            name: node.id.name,
-            file: filePath,
-            line: startLine,
-            signature: signature
-          });
+          const result = extractVariableInfo(node, content, filePath, 'Variable Declaration');
+          found.push(result.found);
+          details.push(result.details);
         }
       },
       
       // クラス宣言
       ClassDeclaration: (node) => {
         if (node.id && node.id.name === targetName) {
-          const startLine = node.loc?.start.line || 0;
-          const endLine = node.loc?.end.line || 0;
-          const classCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
-          
-          found.push({
-            type: 'class',
-            name: node.id.name,
-            line: startLine,
-            code: classCode,
-            signature: `class ${node.id.name}`
-          });
-          
-          details.push({
-            type: 'Class Declaration',
-            name: node.id.name,
-            file: filePath,
-            line: startLine,
-            signature: `class ${node.id.name}`
-          });
+          const result = extractClassInfo(node, content, filePath, 'Class Declaration');
+          found.push(result.found);
+          details.push(result.details);
         }
       },
       
       // クラスメソッド
       MethodDefinition: (node) => {
         if (node.key && node.key.name === targetName) {
-          const startLine = node.loc?.start.line || 0;
-          const endLine = node.loc?.end.line || 0;
-          const methodCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
-          
-          const isAsync = node.value.async ? 'async ' : '';
-          const isGenerator = node.value.generator ? '*' : '';
-          const signature = `${node.kind} ${isAsync}${node.key.name}${isGenerator}(${node.value.params.map(p => p.name || '...').join(', ')})`;
-          
-          found.push({
-            type: 'method',
-            name: node.key.name,
-            line: startLine,
-            code: methodCode,
-            signature: signature
-          });
-          
-          details.push({
-            type: 'Method Definition',
-            name: node.key.name,
-            file: filePath,
-            line: startLine,
-            signature: signature
-          });
+          const result = extractMethodInfo(node, content, filePath, 'Method Definition');
+          found.push(result.found);
+          details.push(result.details);
         }
       },
       
@@ -2382,70 +2318,23 @@ async function extractFunctionFromAST(content, targetName, filePath) {
       Property: (node) => {
         if (node.key && node.key.name === targetName && 
             (node.value.type === 'FunctionExpression' || node.value.type === 'ArrowFunctionExpression')) {
-          const startLine = node.loc?.start.line || 0;
-          const endLine = node.loc?.end.line || 0;
-          const methodCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
-          
-          let signature = '';
-          if (node.value.type === 'ArrowFunctionExpression') {
-            const isAsync = node.value.async ? 'async ' : '';
-            signature = `${node.key.name}: ${isAsync}(${node.value.params.map(p => p.name || '...').join(', ')}) => ...`;
-          } else {
-            const isAsync = node.value.async ? 'async ' : '';
-            const isGenerator = node.value.generator ? '*' : '';
-            signature = `${node.key.name}: ${isAsync}function${isGenerator}(${node.value.params.map(p => p.name || '...').join(', ')}) ...`;
-          }
-          
-          found.push({
-            type: 'property',
-            name: node.key.name,
-            line: startLine,
-            code: methodCode,
-            signature: signature
-          });
-          
-          details.push({
-            type: 'Object Method',
-            name: node.key.name,
-            file: filePath,
-            line: startLine,
-            signature: signature
-          });
+          const result = extractPropertyInfo(node, content, filePath, 'Object Method');
+          found.push(result.found);
+          details.push(result.details);
         }
       },
       
       // 関数式（直接的な関数式）
       FunctionExpression: (node) => {
         if (node.id && node.id.name === targetName) {
-          const startLine = node.loc?.start.line || 0;
-          const endLine = node.loc?.end.line || 0;
-          const functionCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
-          
-          const isAsync = node.async ? 'async ' : '';
-          const isGenerator = node.generator ? '*' : '';
-          const signature = `${isAsync}function${isGenerator} ${node.id.name}(${node.params.map(p => p.name || '...').join(', ')})`;
-          
-          found.push({
-            type: 'function-expression',
-            name: node.id.name,
-            line: startLine,
-            code: functionCode,
-            signature: signature
-          });
-          
-          details.push({
-            type: 'Function Expression',
-            name: node.id.name,
-            file: filePath,
-            line: startLine,
-            signature: signature
-          });
+          const result = extractFunctionInfo(node, content, filePath, 'Function Expression');
+          found.push(result.found);
+          details.push(result.details);
         }
       }
     });
     
-    console.error(chalk.gray(`🔍 AST analysis completed for ${filePath}:`));
-    console.error(chalk.gray(`  Source type: ${sourceType}`));
+    console.error(chalk.gray(`🔍 JavaScript analysis completed for ${filePath}:`));
     console.error(chalk.gray(`  Found ${found.length} matches for "${targetName}"`));
     
     return {
@@ -2455,11 +2344,274 @@ async function extractFunctionFromAST(content, targetName, filePath) {
     };
     
   } catch (error) {
-    console.error(chalk.yellow('⚠️ AST parsing error:'), error.message);
-    console.error(chalk.gray('  File:', filePath));
-    console.error(chalk.gray('  Target:', targetName));
+    console.error(chalk.yellow('⚠️ JavaScript parsing error:'), error.message);
     return { found: false, content: '', details: [] };
   }
+}
+
+// TypeScriptファイル用の関数抽出
+async function extractFromTypeScript(content, targetName, filePath) {
+  try {
+    const parser = Parser.extend(jsx());
+    
+    // TypeScript用のパーサー設定（より厳密）
+    const parseOptions = {
+      ecmaVersion: 2022,
+      sourceType: 'module', // TypeScriptは通常module
+      allowHashBang: true,
+      allowImportExportEverywhere: true,
+      allowAwaitOutsideFunction: true,
+      allowReturnOutsideFunction: true,
+      allowSuperOutsideMethod: true,
+      allowUndeclaredExports: true,
+      locations: true,
+      ranges: true,
+      plugins: {
+        jsx: filePath.endsWith('.tsx'),
+        typescript: true
+      }
+    };
+    
+    let ast;
+    try {
+      ast = parser.parse(content, parseOptions);
+    } catch (moduleError) {
+      // moduleとして解析できない場合はscriptとして試行
+      try {
+        ast = parser.parse(content, {
+          ...parseOptions,
+          sourceType: 'script'
+        });
+      } catch (scriptError) {
+        console.error(chalk.yellow('⚠️ TypeScript parsing failed:'), scriptError.message);
+        return { found: false, content: '', details: [] };
+      }
+    }
+    
+    const found = [];
+    const details = [];
+    
+    // TypeScript特有の関数検索パターン（より詳細な型情報を含む）
+    walk(ast, {
+      // 関数宣言
+      FunctionDeclaration: (node) => {
+        if (node.id && node.id.name === targetName) {
+          const result = extractFunctionInfo(node, content, filePath, 'Function Declaration');
+          found.push(result.found);
+          details.push(result.details);
+        }
+      },
+      
+      // 変数宣言（関数式、アロー関数）
+      VariableDeclarator: (node) => {
+        if (node.id && node.id.name === targetName) {
+          const result = extractVariableInfo(node, content, filePath, 'Variable Declaration');
+          found.push(result.found);
+          details.push(result.details);
+        }
+      },
+      
+      // クラス宣言
+      ClassDeclaration: (node) => {
+        if (node.id && node.id.name === targetName) {
+          const result = extractClassInfo(node, content, filePath, 'Class Declaration');
+          found.push(result.found);
+          details.push(result.details);
+        }
+      },
+      
+      // クラスメソッド
+      MethodDefinition: (node) => {
+        if (node.key && node.key.name === targetName) {
+          const result = extractMethodInfo(node, content, filePath, 'Method Definition');
+          found.push(result.found);
+          details.push(result.details);
+        }
+      },
+      
+      // オブジェクトメソッド
+      Property: (node) => {
+        if (node.key && node.key.name === targetName && 
+            (node.value.type === 'FunctionExpression' || node.value.type === 'ArrowFunctionExpression')) {
+          const result = extractPropertyInfo(node, content, filePath, 'Object Method');
+          found.push(result.found);
+          details.push(result.details);
+        }
+      },
+      
+      // 関数式（直接的な関数式）
+      FunctionExpression: (node) => {
+        if (node.id && node.id.name === targetName) {
+          const result = extractFunctionInfo(node, content, filePath, 'Function Expression');
+          found.push(result.found);
+          details.push(result.details);
+        }
+      }
+    });
+    
+    console.error(chalk.gray(`🔍 TypeScript analysis completed for ${filePath}:`));
+    console.error(chalk.gray(`  Found ${found.length} matches for "${targetName}"`));
+    
+    return {
+      found: found.length > 0,
+      content: found.map(f => f.code).join('\n\n'),
+      details: details
+    };
+    
+  } catch (error) {
+    console.error(chalk.yellow('⚠️ TypeScript parsing error:'), error.message);
+    return { found: false, content: '', details: [] };
+  }
+}
+
+// 共通の関数情報抽出ヘルパー
+function extractFunctionInfo(node, content, filePath, type) {
+  const startLine = node.loc?.start.line || 0;
+  const endLine = node.loc?.end.line || 0;
+  const functionCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
+  
+  const isAsync = node.async ? 'async ' : '';
+  const isGenerator = node.generator ? '*' : '';
+  const signature = `${isAsync}function${isGenerator} ${node.id.name}(${node.params.map(p => p.name || '...').join(', ')})`;
+  
+  return {
+    found: {
+      type: 'function',
+      name: node.id.name,
+      line: startLine,
+      code: functionCode,
+      signature: signature
+    },
+    details: {
+      type: type,
+      name: node.id.name,
+      file: filePath,
+      line: startLine,
+      signature: signature
+    }
+  };
+}
+
+// 共通の変数情報抽出ヘルパー
+function extractVariableInfo(node, content, filePath, type) {
+  const startLine = node.loc?.start.line || 0;
+  const endLine = node.loc?.end.line || 0;
+  const functionCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
+  
+  let signature = '';
+  if (node.init && node.init.type === 'ArrowFunctionExpression') {
+    const isAsync = node.init.async ? 'async ' : '';
+    signature = `const ${node.id.name} = ${isAsync}(${node.init.params.map(p => p.name || '...').join(', ')}) => ...`;
+  } else if (node.init && node.init.type === 'FunctionExpression') {
+    const isAsync = node.init.async ? 'async ' : '';
+    const isGenerator = node.init.generator ? '*' : '';
+    signature = `const ${node.id.name} = ${isAsync}function${isGenerator}(${node.init.params.map(p => p.name || '...').join(', ')}) ...`;
+  } else {
+    signature = `const ${node.id.name} = ...`;
+  }
+  
+  return {
+    found: {
+      type: 'variable',
+      name: node.id.name,
+      line: startLine,
+      code: functionCode,
+      signature: signature
+    },
+    details: {
+      type: type,
+      name: node.id.name,
+      file: filePath,
+      line: startLine,
+      signature: signature
+    }
+  };
+}
+
+// 共通のクラス情報抽出ヘルパー
+function extractClassInfo(node, content, filePath, type) {
+  const startLine = node.loc?.start.line || 0;
+  const endLine = node.loc?.end.line || 0;
+  const classCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
+  
+  return {
+    found: {
+      type: 'class',
+      name: node.id.name,
+      line: startLine,
+      code: classCode,
+      signature: `class ${node.id.name}`
+    },
+    details: {
+      type: type,
+      name: node.id.name,
+      file: filePath,
+      line: startLine,
+      signature: `class ${node.id.name}`
+    }
+  };
+}
+
+// 共通のメソッド情報抽出ヘルパー
+function extractMethodInfo(node, content, filePath, type) {
+  const startLine = node.loc?.start.line || 0;
+  const endLine = node.loc?.end.line || 0;
+  const methodCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
+  
+  const isAsync = node.value.async ? 'async ' : '';
+  const isGenerator = node.value.generator ? '*' : '';
+  const signature = `${node.kind} ${isAsync}${node.key.name}${isGenerator}(${node.value.params.map(p => p.name || '...').join(', ')})`;
+  
+  return {
+    found: {
+      type: 'method',
+      name: node.key.name,
+      line: startLine,
+      code: methodCode,
+      signature: signature
+    },
+    details: {
+      type: type,
+      name: node.key.name,
+      file: filePath,
+      line: startLine,
+      signature: signature
+    }
+  };
+}
+
+// 共通のプロパティ情報抽出ヘルパー
+function extractPropertyInfo(node, content, filePath, type) {
+  const startLine = node.loc?.start.line || 0;
+  const endLine = node.loc?.end.line || 0;
+  const methodCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
+  
+  let signature = '';
+  if (node.value.type === 'ArrowFunctionExpression') {
+    const isAsync = node.value.async ? 'async ' : '';
+    signature = `${node.key.name}: ${isAsync}(${node.value.params.map(p => p.name || '...').join(', ')}) => ...`;
+  } else {
+    const isAsync = node.value.async ? 'async ' : '';
+    const isGenerator = node.value.generator ? '*' : '';
+    signature = `${node.key.name}: ${isAsync}function${isGenerator}(${node.value.params.map(p => p.name || '...').join(', ')}) ...`;
+  }
+  
+  return {
+    found: {
+      type: 'property',
+      name: node.key.name,
+      line: startLine,
+      code: methodCode,
+      signature: signature
+    },
+    details: {
+      type: type,
+      name: node.key.name,
+      file: filePath,
+      line: startLine,
+      signature: signature
+    }
+  };
 }
 
 async function handleSearchSymbols(request) {
