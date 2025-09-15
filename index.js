@@ -1133,6 +1133,16 @@ let bm25Search = null;
 let vectorSearch = null;
 
 // パフォーマンス監視
+// パス解決ヘルパー関数
+function resolveFilePath(filePath) {
+  // 絶対パスの場合はそのまま使用
+  if (filePath.startsWith('/') || filePath.includes(':')) {
+    return filePath;
+  }
+  // 相対パスの場合はPROJECT_ROOTと結合
+  return join(PROJECT_ROOT, filePath);
+}
+
 const performanceMonitor = {
   startTime: Date.now(),
   operationCounts: {},
@@ -2303,19 +2313,25 @@ async function handleReadFileContent(request) {
     const filePath = request.params.arguments.filePath;
     const maxLines = request.params.arguments.maxLines || 100;
     
-    if (!existsSync(filePath)) {
+    // パス解決
+    const resolvedPath = resolveFilePath(filePath);
+    
+    console.error(chalk.gray('🔍 Original filePath:'), filePath);
+    console.error(chalk.gray('🔍 Resolved path:'), resolvedPath);
+    
+    if (!existsSync(resolvedPath)) {
       return {
         jsonrpc: '2.0',
         id: request.id,
         error: {
           code: -32602,
-          message: `File not found: ${filePath}`
+          message: `File not found: ${resolvedPath} (original: ${filePath})`
         }
       };
     }
     
     // ファイルサイズチェック
-    const stats = statSync(filePath);
+    const stats = statSync(resolvedPath);
     const maxFileSize = config.fileContent?.maxFileSize || 100000;
     
     if (stats.size > maxFileSize) {
@@ -2344,7 +2360,7 @@ async function handleReadFileContent(request) {
       };
     }
     
-    const content = readFileSync(filePath, 'utf8');
+    const content = readFileSync(resolvedPath, 'utf8');
     const lines = content.split('\n');
     const truncatedContent = lines.slice(0, maxLines).join('\n');
     
@@ -2390,19 +2406,26 @@ async function handleParseAST(request) {
     const includeComments = request.params.arguments.includeComments !== false;
     const includeLocations = request.params.arguments.includeLocations !== false;
     
-    if (!existsSync(filePath)) {
+    // パス解決
+    const resolvedPath = resolveFilePath(filePath);
+    
+    console.error(chalk.gray('🔍 Original filePath:'), filePath);
+    console.error(chalk.gray('🔍 Resolved path:'), resolvedPath);
+    console.error(chalk.gray('🔍 PROJECT_ROOT:'), PROJECT_ROOT);
+    
+    if (!existsSync(resolvedPath)) {
       return {
         jsonrpc: '2.0',
         id: request.id,
         error: {
           code: -32602,
-          message: `File not found: ${filePath}`
+          message: `File not found: ${resolvedPath} (original: ${filePath})`
         }
       };
     }
     
-    const content = readFileSync(filePath, 'utf8');
-    const ext = extname(filePath);
+    const content = readFileSync(resolvedPath, 'utf8');
+    const ext = extname(resolvedPath);
     
     if (!['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
       return {
