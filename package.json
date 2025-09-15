@@ -1,6 +1,6 @@
 {
   "name": "context-optimizer",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "Context Optimizer MCP Server v1.5.0 - Advanced MCP Server with Automatic Index Management, Real-time Performance Monitoring, Enhanced Error Handling, and Memory Optimization for Cursor Development",
   "type": "module",
   "main": "index.js",
