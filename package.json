@@ -1,6 +1,6 @@
 {
   "name": "context-optimizer",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "description": "Context Optimizer MCP Server v1.6.0 - Advanced MCP Server with AI External Memory Features, Persistent Storage, Differential Indexing, Content Compression, and Prompt Packaging for Master/Worker AI",
   "type": "module",
   "main": "index.js",
