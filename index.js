@@ -2213,34 +2213,68 @@ async function handleExtractFunction(request) {
 // AST解析で関数を抽出するヘルパー関数
 async function extractFunctionFromAST(content, targetName, filePath) {
   try {
+    // より柔軟なパーサー設定
     const parser = Parser.extend(jsx());
-    const ast = parser.parse(content, {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      allowHashBang: true,
-      allowImportExportEverywhere: true,
-      allowAwaitOutsideFunction: true,
-      allowReturnOutsideFunction: true,
-      allowSuperOutsideMethod: true,
-      allowUndeclaredExports: true
-    });
+    
+    // まずmoduleとして解析を試行
+    let ast;
+    let sourceType = 'module';
+    
+    try {
+      ast = parser.parse(content, {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        allowHashBang: true,
+        allowImportExportEverywhere: true,
+        allowAwaitOutsideFunction: true,
+        allowReturnOutsideFunction: true,
+        allowSuperOutsideMethod: true,
+        allowUndeclaredExports: true,
+        locations: true,
+        ranges: true
+      });
+    } catch (moduleError) {
+      // moduleとして解析できない場合はscriptとして試行
+      try {
+        ast = parser.parse(content, {
+          ecmaVersion: 2022,
+          sourceType: 'script',
+          allowHashBang: true,
+          allowAwaitOutsideFunction: true,
+          allowReturnOutsideFunction: true,
+          allowSuperOutsideMethod: true,
+          locations: true,
+          ranges: true
+        });
+        sourceType = 'script';
+      } catch (scriptError) {
+        console.error(chalk.yellow('⚠️ Both module and script parsing failed:'), scriptError.message);
+        return { found: false, content: '', details: [] };
+      }
+    }
     
     const found = [];
     const details = [];
     
+    // より包括的な関数検索
     walk(ast, {
+      // 関数宣言
       FunctionDeclaration: (node) => {
         if (node.id && node.id.name === targetName) {
           const startLine = node.loc?.start.line || 0;
           const endLine = node.loc?.end.line || 0;
           const functionCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
           
+          const isAsync = node.async ? 'async ' : '';
+          const isGenerator = node.generator ? '*' : '';
+          const signature = `${isAsync}function${isGenerator} ${node.id.name}(${node.params.map(p => p.name || '...').join(', ')})`;
+          
           found.push({
             type: 'function',
             name: node.id.name,
             line: startLine,
             code: functionCode,
-            signature: `function ${node.id.name}(${node.params.map(p => p.name || '...').join(', ')})`
+            signature: signature
           });
           
           details.push({
@@ -2248,11 +2282,12 @@ async function extractFunctionFromAST(content, targetName, filePath) {
             name: node.id.name,
             file: filePath,
             line: startLine,
-            signature: `function ${node.id.name}(${node.params.map(p => p.name || '...').join(', ')})`
+            signature: signature
           });
         }
       },
       
+      // 変数宣言（関数式、アロー関数）
       VariableDeclarator: (node) => {
         if (node.id && node.id.name === targetName) {
           const startLine = node.loc?.start.line || 0;
@@ -2261,9 +2296,12 @@ async function extractFunctionFromAST(content, targetName, filePath) {
           
           let signature = '';
           if (node.init && node.init.type === 'ArrowFunctionExpression') {
-            signature = `const ${node.id.name} = (${node.init.params.map(p => p.name || '...').join(', ')}) => ...`;
+            const isAsync = node.init.async ? 'async ' : '';
+            signature = `const ${node.id.name} = ${isAsync}(${node.init.params.map(p => p.name || '...').join(', ')}) => ...`;
           } else if (node.init && node.init.type === 'FunctionExpression') {
-            signature = `const ${node.id.name} = function(${node.init.params.map(p => p.name || '...').join(', ')}) ...`;
+            const isAsync = node.init.async ? 'async ' : '';
+            const isGenerator = node.init.generator ? '*' : '';
+            signature = `const ${node.id.name} = ${isAsync}function${isGenerator}(${node.init.params.map(p => p.name || '...').join(', ')}) ...`;
           } else {
             signature = `const ${node.id.name} = ...`;
           }
@@ -2286,6 +2324,7 @@ async function extractFunctionFromAST(content, targetName, filePath) {
         }
       },
       
+      // クラス宣言
       ClassDeclaration: (node) => {
         if (node.id && node.id.name === targetName) {
           const startLine = node.loc?.start.line || 0;
@@ -2310,18 +2349,23 @@ async function extractFunctionFromAST(content, targetName, filePath) {
         }
       },
       
+      // クラスメソッド
       MethodDefinition: (node) => {
         if (node.key && node.key.name === targetName) {
           const startLine = node.loc?.start.line || 0;
           const endLine = node.loc?.end.line || 0;
           const methodCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
           
+          const isAsync = node.value.async ? 'async ' : '';
+          const isGenerator = node.value.generator ? '*' : '';
+          const signature = `${node.kind} ${isAsync}${node.key.name}${isGenerator}(${node.value.params.map(p => p.name || '...').join(', ')})`;
+          
           found.push({
             type: 'method',
             name: node.key.name,
             line: startLine,
             code: methodCode,
-            signature: `${node.kind} ${node.key.name}(${node.value.params.map(p => p.name || '...').join(', ')})`
+            signature: signature
           });
           
           details.push({
@@ -2329,11 +2373,80 @@ async function extractFunctionFromAST(content, targetName, filePath) {
             name: node.key.name,
             file: filePath,
             line: startLine,
-            signature: `${node.kind} ${node.key.name}(${node.value.params.map(p => p.name || '...').join(', ')})`
+            signature: signature
+          });
+        }
+      },
+      
+      // オブジェクトメソッド
+      Property: (node) => {
+        if (node.key && node.key.name === targetName && 
+            (node.value.type === 'FunctionExpression' || node.value.type === 'ArrowFunctionExpression')) {
+          const startLine = node.loc?.start.line || 0;
+          const endLine = node.loc?.end.line || 0;
+          const methodCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
+          
+          let signature = '';
+          if (node.value.type === 'ArrowFunctionExpression') {
+            const isAsync = node.value.async ? 'async ' : '';
+            signature = `${node.key.name}: ${isAsync}(${node.value.params.map(p => p.name || '...').join(', ')}) => ...`;
+          } else {
+            const isAsync = node.value.async ? 'async ' : '';
+            const isGenerator = node.value.generator ? '*' : '';
+            signature = `${node.key.name}: ${isAsync}function${isGenerator}(${node.value.params.map(p => p.name || '...').join(', ')}) ...`;
+          }
+          
+          found.push({
+            type: 'property',
+            name: node.key.name,
+            line: startLine,
+            code: methodCode,
+            signature: signature
+          });
+          
+          details.push({
+            type: 'Object Method',
+            name: node.key.name,
+            file: filePath,
+            line: startLine,
+            signature: signature
+          });
+        }
+      },
+      
+      // 関数式（直接的な関数式）
+      FunctionExpression: (node) => {
+        if (node.id && node.id.name === targetName) {
+          const startLine = node.loc?.start.line || 0;
+          const endLine = node.loc?.end.line || 0;
+          const functionCode = content.split('\n').slice(startLine - 1, endLine).join('\n');
+          
+          const isAsync = node.async ? 'async ' : '';
+          const isGenerator = node.generator ? '*' : '';
+          const signature = `${isAsync}function${isGenerator} ${node.id.name}(${node.params.map(p => p.name || '...').join(', ')})`;
+          
+          found.push({
+            type: 'function-expression',
+            name: node.id.name,
+            line: startLine,
+            code: functionCode,
+            signature: signature
+          });
+          
+          details.push({
+            type: 'Function Expression',
+            name: node.id.name,
+            file: filePath,
+            line: startLine,
+            signature: signature
           });
         }
       }
     });
+    
+    console.error(chalk.gray(`🔍 AST analysis completed for ${filePath}:`));
+    console.error(chalk.gray(`  Source type: ${sourceType}`));
+    console.error(chalk.gray(`  Found ${found.length} matches for "${targetName}"`));
     
     return {
       found: found.length > 0,
@@ -2343,6 +2456,8 @@ async function extractFunctionFromAST(content, targetName, filePath) {
     
   } catch (error) {
     console.error(chalk.yellow('⚠️ AST parsing error:'), error.message);
+    console.error(chalk.gray('  File:', filePath));
+    console.error(chalk.gray('  Target:', targetName));
     return { found: false, content: '', details: [] };
   }
 }
@@ -2467,8 +2582,29 @@ async function handleSearchFiles(request) {
     const pattern = request.params.arguments.pattern;
     const maxResults = request.params.arguments.maxResults || 20;
     
-    // 設定ファイルから除外パターンを取得
-    const excludePatterns = config.fileSearch?.excludePatterns || ['**/node_modules/**', '**/dist/**', '**/build/**'];
+    // より柔軟な除外パターンの設定
+    const defaultExcludePatterns = [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/build/**',
+      '**/.git/**',
+      '**/coverage/**',
+      '**/tmp/**',
+      '**/temp/**',
+      '**/.cache/**',
+      '**/.vscode/**',
+      '**/.idea/**',
+      '**/vendor/**',
+      '**/target/**',
+      '**/out/**',
+      '**/bin/**',
+      '**/obj/**',
+      '**/*.log',
+      '**/*.backup'
+    ];
+    
+    // 設定ファイルから除外パターンを取得（より寛容に）
+    const excludePatterns = config.fileSearch?.excludePatterns || defaultExcludePatterns;
     
     // デバッグ情報を追加
     console.error(chalk.blue('🔍 Debug info:'));
@@ -2476,6 +2612,7 @@ async function handleSearchFiles(request) {
     console.error(chalk.gray('  PROJECT_ROOT:'), PROJECT_ROOT);
     console.error(chalk.gray('  Exclude patterns:'), excludePatterns);
     console.error(chalk.gray('  Current working directory:'), process.cwd());
+    console.error(chalk.gray('  Config fileSearch enabled:'), config.fileSearch?.enabled);
     
     // PROJECT_ROOTが存在するかチェック
     if (!existsSync(PROJECT_ROOT)) {
@@ -2493,11 +2630,17 @@ async function handleSearchFiles(request) {
     // プロジェクトルートを基準にファイル検索
     console.error(chalk.blue('🔍 Searching pattern:'), pattern, 'in:', PROJECT_ROOT);
     
-    const files = await glob(pattern, { 
+    // より柔軟な検索オプション
+    const searchOptions = {
       ignore: excludePatterns,
       cwd: PROJECT_ROOT,
-      absolute: true  // 絶対パスで返すように設定
-    });
+      absolute: true,
+      nodir: true,  // ディレクトリは除外
+      dot: false,   // ドットファイルは除外（必要に応じて変更）
+      follow: false // シンボリックリンクは追跡しない
+    };
+    
+    const files = await glob(pattern, searchOptions);
     
     console.error(chalk.green('📁 Found files:'), files.length);
     
@@ -2516,19 +2659,42 @@ async function handleSearchFiles(request) {
         '**/*.{js,ts,jsx,tsx}',
         '**/*.{js,ts}',
         '**/*.js',
-        '**/*.ts'
+        '**/*.ts',
+        '**/*.json',
+        '**/*.md'
       ];
       
+      console.error(chalk.gray('🔍 Testing alternative patterns:'));
       for (const testPattern of testPatterns) {
-        const testFiles = await glob(testPattern, { 
-          ignore: excludePatterns,
-          cwd: PROJECT_ROOT,
-          absolute: true
-        });
-        console.error(chalk.gray(`  Test pattern "${testPattern}": ${testFiles.length} files`));
-        if (testFiles.length > 0) {
-          console.error(chalk.gray(`    Sample: ${testFiles[0]}`));
+        try {
+          const testFiles = await glob(testPattern, searchOptions);
+          console.error(chalk.gray(`  "${testPattern}": ${testFiles.length} files`));
+          if (testFiles.length > 0) {
+            console.error(chalk.gray(`    Sample: ${testFiles[0]}`));
+          }
+        } catch (testError) {
+          console.error(chalk.gray(`  "${testPattern}": ERROR - ${testError.message}`));
         }
+      }
+      
+      // 除外パターンが厳しすぎる可能性があるので、最小限の除外でテスト
+      console.error(chalk.gray('🔍 Testing with minimal exclusions:'));
+      const minimalExcludePatterns = ['**/node_modules/**', '**/.git/**'];
+      const minimalSearchOptions = {
+        ignore: minimalExcludePatterns,
+        cwd: PROJECT_ROOT,
+        absolute: true,
+        nodir: true
+      };
+      
+      try {
+        const minimalFiles = await glob(pattern, minimalSearchOptions);
+        console.error(chalk.gray(`  With minimal exclusions: ${minimalFiles.length} files`));
+        if (minimalFiles.length > 0) {
+          console.error(chalk.gray(`    Sample: ${minimalFiles[0]}`));
+        }
+      } catch (minimalError) {
+        console.error(chalk.gray(`  Minimal exclusion test failed: ${minimalError.message}`));
       }
     }
     
@@ -2544,6 +2710,7 @@ async function handleSearchFiles(request) {
             totalFiles: files.length,
             projectRoot: PROJECT_ROOT,
             excludePatterns: excludePatterns,
+            searchOptions: searchOptions,
             timestamp: new Date().toISOString()
           }, null, 2)
         }]
@@ -2551,6 +2718,8 @@ async function handleSearchFiles(request) {
     };
   } catch (error) {
     console.error(chalk.red('❌ search_files error:'), error);
+    console.error(chalk.gray('  Pattern:'), request.params.arguments.pattern);
+    console.error(chalk.gray('  PROJECT_ROOT:'), PROJECT_ROOT);
     return {
       jsonrpc: '2.0',
       id: request.id,
