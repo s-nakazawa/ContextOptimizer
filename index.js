@@ -3075,11 +3075,17 @@ async function handleHybridSearch(request) {
       console.error(chalk.green('🔍 BM25 results:'), bm25Results.length);
       
       bm25Results.forEach(result => {
+        // 結果の安全性チェック
+        if (!result || !result.docId) {
+          console.error(chalk.yellow('⚠️ Invalid BM25 result:'), result);
+          return;
+        }
+        
         results.push({
           file: result.docId,
           score: result.score * config.hybridSearch.weights.bm25,
           method: 'BM25',
-          content: includeContent ? result.content.substring(0, 200) + '...' : undefined
+          content: includeContent && result.content ? result.content.substring(0, 200) + '...' : undefined
         });
       });
     }
@@ -3090,11 +3096,17 @@ async function handleHybridSearch(request) {
       console.error(chalk.green('🔍 Vector results:'), vectorResults.length);
       
       vectorResults.forEach(result => {
+        // 結果の安全性チェック
+        if (!result || !result.docId) {
+          console.error(chalk.yellow('⚠️ Invalid Vector result:'), result);
+          return;
+        }
+        
         results.push({
           file: result.docId,
           score: result.score * config.hybridSearch.weights.vector,
           method: 'Vector',
-          content: includeContent ? result.content.substring(0, 200) + '...' : undefined
+          content: includeContent && result.content ? result.content.substring(0, 200) + '...' : undefined
         });
       });
     }
@@ -3102,6 +3114,12 @@ async function handleHybridSearch(request) {
     // 結果を統合してスコアでソート
     const combinedResults = {};
     results.forEach(result => {
+      // 結果の安全性チェック
+      if (!result || !result.file) {
+        console.error(chalk.yellow('⚠️ Invalid result in combination:'), result);
+        return;
+      }
+      
       if (!combinedResults[result.file]) {
         combinedResults[result.file] = {
           file: result.file,
