@@ -1,7 +1,7 @@
 {
   "name": "context-optimizer",
-  "version": "1.5.7",
-  "description": "Context Optimizer MCP Server v1.5.0 - Advanced MCP Server with Automatic Index Management, Real-time Performance Monitoring, Enhanced Error Handling, and Memory Optimization for Cursor Development",
+  "version": "1.6.0",
+  "description": "Context Optimizer MCP Server v1.6.0 - Advanced MCP Server with AI External Memory Features, Persistent Storage, Differential Indexing, Content Compression, and Prompt Packaging for Master/Worker AI",
   "type": "module",
   "main": "index.js",
   "bin": {
@@ -15,7 +15,11 @@
     "context-optimizer-env-example.txt",
     "context-optimizer-cursor-settings-example.json",
     "CONTEXT-OPTIMIZER-README.md",
-    "README.md"
+    "README.md",
+    "storage/",
+    "indexing/",
+    "compression/",
+    "packaging/"
   ],
   "scripts": {
     "start": "node index.js",
@@ -66,7 +70,14 @@
     "backup-recovery",
     "memory-optimization",
     "batch-processing",
-    "performance-analytics"
+    "performance-analytics",
+    "ai-external-memory",
+    "persistent-storage",
+    "differential-indexing",
+    "content-compression",
+    "prompt-packaging",
+    "master-worker-ai",
+    "context-packaging"
   ],
   "author": "charu",
   "license": "MIT",

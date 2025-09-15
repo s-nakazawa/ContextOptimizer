@@ -1,8 +1,8 @@
 # Context Optimizer
 
-**高度なModel Context Protocol (MCP)サーバー - Cursor開発環境向けのインテリジェントなファイル検索、コンテンツ読み込み、AST解析、Git差分分析、パフォーマンス最適化、ハイブリッド検索、リアルタイムコンテキスト監視、自動圧縮、最適化提案、包括的アナリティクス機能を提供**
+**高度なModel Context Protocol (MCP)サーバー - Cursor開発環境向けのAI外部記憶装置機能、永続化ストレージ、差分インデックス、コンテンツ圧縮、プロンプトパッケージング、Master/Worker AI対応の包括的コンテキスト管理システム**
 
-Advanced Model Context Protocol (MCP) server for Cursor development environments with intelligent file search, content reading, AST parsing, Git diff analysis, performance optimization, hybrid search capabilities, real-time context monitoring, auto compression, optimization suggestions, and comprehensive analytics.
+Advanced Model Context Protocol (MCP) server for Cursor development environments with AI external memory features, persistent storage, differential indexing, content compression, prompt packaging, and comprehensive context management for Master/Worker AI systems.
 
 ## 🚀 機能 / Features
 
@@ -37,6 +37,16 @@ Advanced Model Context Protocol (MCP) server for Cursor development environments
   **Context Optimization Suggestions**: Intelligent suggestions for context optimization
 - **コンテキスト履歴管理**: 過去のコンテキストの効率的な管理
   **Context History Management**: Efficient management of past contexts
+
+### AI外部記憶装置機能 / AI External Memory Features
+- **永続化ストレージ**: JSONベースのローカルストレージでインデックスと履歴を永続化
+  **Persistent Storage**: JSON-based local storage for persistent indexes and history
+- **差分インデックス**: Gitベースの変更検出による効率的な増分インデックス更新
+  **Differential Indexing**: Efficient incremental index updates with Git-based change detection
+- **コンテンツ圧縮**: トークン数しきい値に基づく自動要約・圧縮機能
+  **Content Compression**: Automatic summarization and compression based on token thresholds
+- **プロンプトパッケージング**: Master/Worker AI用の構造化されたコンテキストパッケージ生成
+  **Prompt Packaging**: Structured context package generation for Master/Worker AI
 
 ### アナリティクス・洞察 / Analytics & Insights
 - **コンテキストアナリティクス**: コンテキスト運用の包括的分析・可視化
@@ -126,6 +136,24 @@ Cursor: "開発効率を表示して"
 → get_efficiency_dashboard がリアルタイムダッシュボードを表示
 → generate_performance_report が詳細レポートを作成
 → トレンド、洞察、推奨事項を表示
+```
+
+#### 🧠 **AI外部記憶装置** / **AI External Memory**
+```
+Cursor: "React認証機能の実装について教えて"
+→ generate_master_package がMaster AI用の包括的パッケージを生成
+→ プロジェクト概要、関連ファイル、推奨事項を含む構造化データ
+→ 永続化ストレージから履歴とスナップショットを取得
+→ トークン数制限内で最適化されたコンテキストを提供
+```
+
+#### 🔧 **Worker AI支援** / **Worker AI Support**
+```
+Cursor: "ログインコンポーネントを作成して"
+→ generate_worker_package がWorker AI用のタスク特化パッケージを生成
+→ 関連コード、依存関係、実装ヒントを含む
+→ コンテンツ圧縮で効率的な情報提供
+→ タスク実行に必要な最小限のコンテキストを構造化
 ```
 
 ## ⚙️ 設定 / Configuration
@@ -435,6 +463,12 @@ The server now uses a **blacklist-based approach** for better flexibility and ma
   **Optimize project performance**
 - `hybrid_search`: ハイブリッドBM25 + ベクトル検索を実行
   **Perform hybrid BM25 + Vector search**
+
+### AI外部記憶装置ツール / AI External Memory Tools
+- `generate_master_package`: Master AI用のコンテキストパッケージを生成
+  **Generate context package for Master AI**
+- `generate_worker_package`: Worker AI用のコンテキストパッケージを生成
+  **Generate context package for Worker AI**
 
 ### コンテキスト管理ツール / Context Management Tools
 - `monitor_context_size`: リアルタイムでコンテキスト使用量を監視
