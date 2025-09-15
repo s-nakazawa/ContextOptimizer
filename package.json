@@ -1,7 +1,7 @@
 {
   "name": "context-optimizer",
-  "version": "1.4.6",
-  "description": "Context Optimizer MCP Server - Advanced MCP Server for Cursor Development with File Search, Content Reading, AST Parsing, Git Diff Analysis, Performance Optimization and Hybrid Search",
+  "version": "1.5.0",
+  "description": "Context Optimizer MCP Server v1.5.0 - Advanced MCP Server with Automatic Index Management, Real-time Performance Monitoring, Enhanced Error Handling, and Memory Optimization for Cursor Development",
   "type": "module",
   "main": "index.js",
   "bin": {
@@ -60,7 +60,13 @@
     "vector-search",
     "ast-parsing",
     "git-diff",
-    "performance-optimization"
+    "performance-optimization",
+    "automatic-indexing",
+    "error-handling",
+    "backup-recovery",
+    "memory-optimization",
+    "batch-processing",
+    "performance-analytics"
   ],
   "author": "charu",
   "license": "MIT",

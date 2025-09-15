@@ -962,10 +962,13 @@ async function createInitialIndex() {
     // ファイルを検索
     const files = await glob(patterns, { 
       ignore: excludePatterns,
-      cwd: PROJECT_ROOT
+      cwd: PROJECT_ROOT,
+      absolute: true  // 絶対パスで返すように設定
     });
     
     console.error(chalk.green('📁 Found files for indexing:'), files.length);
+    console.error(chalk.gray('🔍 PROJECT_ROOT:'), PROJECT_ROOT);
+    console.error(chalk.gray('📂 Sample files:'), files.slice(0, 3));
     
     // インデックス作成の進捗を追跡
     let indexedCount = 0;
@@ -974,7 +977,10 @@ async function createInitialIndex() {
     for (const file of files.slice(0, maxFiles)) {
       try {
         const content = readFileSync(file, 'utf8');
-        const docId = file.replace(PROJECT_ROOT, '').replace(/^\//, '');
+        // 絶対パスから相対パスを作成
+        const docId = file.startsWith(PROJECT_ROOT) 
+          ? file.substring(PROJECT_ROOT.length + 1)  // +1 for the trailing slash
+          : file;
         
         // BM25インデックスに追加
         if (bm25Search) {
@@ -1021,19 +1027,25 @@ async function updateIndex() {
     // ファイルを検索
     const files = await glob(patterns, { 
       ignore: excludePatterns,
-      cwd: PROJECT_ROOT
+      cwd: PROJECT_ROOT,
+      absolute: true  // 絶対パスで返すように設定
     });
     
     console.error(chalk.green('📁 Found files for indexing:'), files.length);
+    console.error(chalk.gray('🔍 PROJECT_ROOT:'), PROJECT_ROOT);
+    console.error(chalk.gray('📂 Sample files:'), files.slice(0, 3));
     
     // インデックス更新の進捗を追跡
     let updatedCount = 0;
-    const maxFiles = Math.min(files.length, 50); // 更新時は50ファイルまで
+    const actualMaxFiles = Math.min(files.length, 50); // 更新時は50ファイルまで
     
-    for (const file of files.slice(0, maxFiles)) {
+    for (const file of files.slice(0, actualMaxFiles)) {
       try {
         const content = readFileSync(file, 'utf8');
-        const docId = file.replace(PROJECT_ROOT, '').replace(/^\//, '');
+        // 絶対パスから相対パスを作成
+        const docId = file.startsWith(PROJECT_ROOT) 
+          ? file.substring(PROJECT_ROOT.length + 1)  // +1 for the trailing slash
+          : file;
         
         // BM25インデックスに追加/更新
         if (bm25Search) {
@@ -2006,7 +2018,8 @@ async function handleGetContextPack(request) {
     
     const files = await glob('**/*', { 
       ignore: excludePatterns,
-      cwd: PROJECT_ROOT
+      cwd: PROJECT_ROOT,
+      absolute: true  // 絶対パスで返すように設定
     });
     
     console.error(chalk.green('📁 Found files:'), files.length);
@@ -2063,7 +2076,8 @@ async function handleExtractFunction(request) {
     
     const files = await glob('**/*', { 
       ignore: excludePatterns,
-      cwd: PROJECT_ROOT
+      cwd: PROJECT_ROOT,
+      absolute: true  // 絶対パスで返すように設定
     });
     
     console.error(chalk.green('📁 Found files:'), files.length);
@@ -2130,7 +2144,8 @@ async function handleSearchSymbols(request) {
     
     const files = await glob('**/*', { 
       ignore: excludePatterns,
-      cwd: PROJECT_ROOT
+      cwd: PROJECT_ROOT,
+      absolute: true  // 絶対パスで返すように設定
     });
     
     console.error(chalk.green('📁 Found files:'), files.length);
@@ -2232,7 +2247,8 @@ async function handleSearchFiles(request) {
     
     const files = await glob(pattern, { 
       ignore: excludePatterns,
-      cwd: PROJECT_ROOT
+      cwd: PROJECT_ROOT,
+      absolute: true  // 絶対パスで返すように設定
     });
     
     console.error(chalk.green('📁 Found files:'), files.length);
@@ -2398,23 +2414,30 @@ async function handleParseAST(request) {
     if (ext === '.ts' || ext === '.tsx') {
       // TypeScriptファイルの解析
       try {
-        // TypeScript用のパーサー設定を修正
-        ast = parse(parseContent, {
+      // TypeScript用のパーサー設定を修正
+      ast = parse(parseContent, {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        loc: includeLocations,
+        range: includeLocations,
+        allowHashBang: true,
+        allowImportExportEverywhere: true,
+        allowAwaitOutsideFunction: true,
+        allowReturnOutsideFunction: true,
+        allowSuperOutsideMethod: true,
+        allowUndeclaredExports: true,
+        parserOptions: {
           ecmaVersion: 2022,
           sourceType: 'module',
-          loc: includeLocations,
-          range: includeLocations,
-          allowHashBang: true,
-          allowImportExportEverywhere: true,
-          allowAwaitOutsideFunction: true,
-          allowReturnOutsideFunction: true,
-          allowSuperOutsideMethod: true,
-          allowUndeclaredExports: true,
-          plugins: [
-            'typescript',
-            ext === '.tsx' ? 'jsx' : null
-          ].filter(Boolean)
-        });
+          ecmaFeatures: {
+            jsx: ext === '.tsx'
+          }
+        },
+        plugins: [
+          'typescript',
+          ext === '.tsx' ? 'jsx' : null
+        ].filter(Boolean)
+      });
       } catch (tsError) {
         // TypeScript解析に失敗した場合はJavaScriptとして解析
         console.error(chalk.yellow('⚠️ TypeScript解析に失敗、JavaScriptとして解析:'), tsError.message);
@@ -2797,10 +2820,13 @@ async function handleCreateIndex(request) {
     // ファイルを検索
     const files = await glob(patterns, { 
       ignore: excludePatterns,
-      cwd: PROJECT_ROOT
+      cwd: PROJECT_ROOT,
+      absolute: true  // 絶対パスで返すように設定
     });
     
     console.error(chalk.green('📁 Found files for indexing:'), files.length);
+    console.error(chalk.gray('🔍 PROJECT_ROOT:'), PROJECT_ROOT);
+    console.error(chalk.gray('📂 Sample files:'), files.slice(0, 3));
     
     // インデックス作成の進捗を追跡
     let indexedCount = 0;
@@ -2809,7 +2835,10 @@ async function handleCreateIndex(request) {
     for (const file of files.slice(0, actualMaxFiles)) {
       try {
         const content = readFileSync(file, 'utf8');
-        const docId = file.replace(PROJECT_ROOT, '').replace(/^\//, '');
+        // 絶対パスから相対パスを作成
+        const docId = file.startsWith(PROJECT_ROOT) 
+          ? file.substring(PROJECT_ROOT.length + 1)  // +1 for the trailing slash
+          : file;
         
         // BM25インデックスに追加
         if (bm25Search) {
